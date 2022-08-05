@@ -835,7 +835,8 @@ class BoundaryCommunicator(object):
         if self.left_proc == self.size-1:
             # The index 2 corresponds to z
             float_recv_left[2,:] = float_recv_left[2,:] - Ltot
-
+            
+            
         # Add the exchanged buffers to the particles on the CPU or GPU
         # and resize the auxiliary field-on-particle and sorting arrays
         add_buffers_to_particles( species, float_recv_left, float_recv_right,

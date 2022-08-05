@@ -125,6 +125,10 @@ def remove_particles_cpu(species, fld, n_guard, left_proc, right_proc):
         # No need to allocate and copy data ; return an empty array
         float_send_left = np.empty((n_float, 0), dtype=np.float64)
         uint_send_left = np.empty((n_int, 0), dtype=np.uint64)
+        if species.particle_boundaries['zmin'] == 'reflective':
+            selec_stay |= selec_left
+            species.uz[selec_left] *= -1
+
 
     # Allocate and fill right sending buffer
     if right_proc is not None:
@@ -151,6 +155,9 @@ def remove_particles_cpu(species, fld, n_guard, left_proc, right_proc):
         # No need to allocate and copy data ; return an empty array
         float_send_right = np.empty((n_float, 0), dtype = np.float64)
         uint_send_right = np.empty((n_int, 0), dtype=np.float64)
+        if species.particle_boundaries['zmax'] == 'reflective':
+            selec_stay |= selec_right
+            species.uz[selec_right] *= -1
 
     # Resize the particle arrays
     N_stay = selec_stay.sum()
@@ -231,13 +238,26 @@ def remove_particles_gpu(species, fld, n_guard, left_proc, right_proc):
     i_max = int(prefix_sum[ iz_max*(Nr+1) - 1 ])
 
     # Total number of particles in each particle group
-    N_send_l = i_min
     new_Ntot = i_max - i_min
+    N_send_l = i_min
     N_send_r = species.Ntot - i_max
+
+    # If 'reflective' particle boundaries are used
+    # then the particles should not be removed
+    if left_proc is None \
+        and species.particle_boundaries['zmin'] == 'reflective':
+        new_Ntot = new_Ntot + i_min
+        i_min = 0
+
+    if right_proc is None \
+        and species.particle_boundaries['zmax'] == 'reflective':
+        new_Ntot = new_Ntot + i_max
+        i_max = 0
 
     # Allocate the sending buffers on the CPU
     n_float = species.n_float_quantities
     n_int = species.n_integer_quantities
+    
     if left_proc is not None:
         float_send_left = np.empty((n_float, N_send_l), dtype=np.float64)
         uint_send_left = np.empty((n_int, N_send_l), dtype=np.uint64)
@@ -276,6 +296,13 @@ def remove_particles_gpu(species, fld, n_guard, left_proc, right_proc):
         particle_array = getattr( attr_list[i_attr][0], attr_list[i_attr][1] )
         split_particles_to_buffers[dim_grid_1d, dim_block_1d]( particle_array,
                     left_buffer, stay_buffer, right_buffer, i_min, i_max)
+        if i_attr == 5:
+            if left_proc is None \
+                and species.particle_boundaries['zmin'] == 'reflective':
+                stay_buffer[:N_send_l] *= -1
+            if right_proc is None \
+                and species.particle_boundaries['zmax'] == 'reflective':
+                stay_buffer[species.Ntot-N_send_r:] *= -1
         # Assign the stay_buffer to the initial particle data array
         # and fill the sending buffers (if needed for MPI)
         setattr( attr_list[i_attr][0], attr_list[i_attr][1], stay_buffer)
@@ -521,6 +548,7 @@ def shift_particles_periodic_subdomain( species, zmin, zmax ):
     -----------
     species: an fbpic.Species object
         Contains the particle data
+
     zmin, zmax: floats
         Positions of the edges of the periodic box
     """

@@ -67,37 +67,38 @@ class Particles(object) :
                     ux_th=0., uy_th=0., uz_th=0.,
                     dens_func=None, continuous_injection=True,
                     grid_shape=None, particle_shape='linear',
-                    use_cuda=False, dz_particles=None ):
+                    use_cuda=False, dz_particles=None,
+                    particle_boundaries={'zmin':'open', 'zmax':'open'}):
         """
         Initialize a uniform set of particles
 
         Parameters
         ----------
-        q : float (in Coulombs)
+        q: float (in Coulombs)
            Charge of the particle species
 
-        m : float (in kg)
+        m: float (in kg)
            Mass of the particle species
 
-        n : float (in particles per m^3)
+        n: float (in particles per m^3)
            Peak density of particles
 
-        Npz : int
+        Npz: int
            Number of macroparticles along the z axis
 
-        zmin, zmax : floats (in meters)
+        zmin, zmax: floats (in meters)
            z positions between which the particles are initialized
 
-        Npr : int
+        Npr: int
            Number of macroparticles along the r axis
 
-        rmin, rmax : floats (in meters)
+        rmin, rmax: floats (in meters)
            r positions between which the particles are initialized
 
-        Nptheta : int
+        Nptheta: int
            Number of macroparticules along theta
 
-        dt : float (in seconds)
+        dt: float (in seconds)
            The timestep for the particle pusher
 
         ux_m, uy_m, uz_m: floats (dimensionless), optional
@@ -106,7 +107,7 @@ class Particles(object) :
         ux_th, uy_th, uz_th: floats (dimensionless), optional
            Normalized thermal momenta in each direction
 
-        dens_func : callable, optional
+        dens_func: callable, optional
            A function of the form :
            `def dens_func( z, r ) ...`
            or
@@ -115,7 +116,7 @@ class Particles(object) :
            a 1d array containing the density *relative to n*
            (i.e. a number between 0 and 1) at the given positions
 
-        continuous_injection : bool, optional
+        continuous_injection: bool, optional
            Whether to continuously inject the particles,
            in the case of a moving window
 
@@ -130,7 +131,7 @@ class Particles(object) :
             Possible values are 'linear' and 'cubic' for first and third
             order particle shape factors.
 
-        use_cuda : bool, optional
+        use_cuda: bool, optional
             Wether to use the GPU or not.
 
         dz_particles: float (in meter), optional
@@ -139,6 +140,15 @@ class Particles(object) :
             from the arguments `zmin`, `zmax` and `Npz`. However, when
             there are no particles in the initial box (`Npz = 0`),
             `dz_particles` needs to be explicitly passed.
+
+        particle_boundaries: dict, optional
+            A dictionary with 'zmin' and 'zmax' as keys, and strings as values.
+            This specifies the particle boundary in the longitudinal (z) direction
+              - `boundaries['z']` can be either `'reflective'` or `'open'`.
+              - `'open'` particles that leave the domain will be removed
+              - `'reflective'` particles reflect at the domain boundary
+            If the EM-boundaries are periodic then then the particles will be
+            perodic as well.
         """
         # Define whether or not to use the GPU
         self.use_cuda = use_cuda
@@ -148,6 +158,8 @@ class Particles(object) :
                 'Performing the particle operations on the CPU.')
             self.use_cuda = False
         self.data_is_on_gpu = False # Data is initialized on the CPU
+
+        self.particle_boundaries = particle_boundaries
 
         # Generate evenly-spaced particles
         Ntot, x, y, z, ux, uy, uz, inv_gamma, w = generate_evenly_spaced(
