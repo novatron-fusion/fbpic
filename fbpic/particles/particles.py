@@ -146,8 +146,11 @@ class Particles(object) :
             This specifies the particle boundary in the longitudinal (z) direction
               - `boundaries['z']` can be either `'reflective'` or `'open'`.
               - `'open'` particles that leave the domain will be removed
-              - `'reflective'` particles reflect at the domain boundary
-            If the EM-boundaries are periodic then then the particles will be
+              - `'reflective'` particles reflect at the domain boundary, i.e.
+                uz = -1uz
+              - `'bounce'` particles bounce back at the boundary, i.e.
+              ux = -1ux, uy = -1uy, and uz = -1uz.
+            If the EM-boundaries are periodic then the particles will be
             perodic as well.
         """
         # Define whether or not to use the GPU
