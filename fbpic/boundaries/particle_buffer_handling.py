@@ -330,14 +330,14 @@ def remove_particles_gpu(species, fld, n_guard, left_proc, right_proc):
             if species.particle_boundaries['zmin'] == 'reflective':
                 # uz = -1uz
                 if i_attr == 5:
-                    stay_buffer[:N_send_l]  = np.where(stay_buffer[:N_send_l] < 0,
+                    stay_buffer[:N_send_l]  = cupy.where(stay_buffer[:N_send_l] < 0,
                                                         stay_buffer[:N_send_l],
                                                         -1*stay_buffer[:N_send_l])
             if species.particle_boundaries['zmin'] == 'bounce':
                 # ux, uy, uz = -1ux, -1,uy, -1uz
                 if i_attr > 2 and i_attr < 6:
                     particle_array_uz = getattr( attr_list[5][0], attr_list[5][1] )
-                    stay_buffer[:N_send_l] = np.where(particle_array_uz[:N_send_l] < 0,
+                    stay_buffer[:N_send_l] = cupy.where(particle_array_uz[:N_send_l] < 0,
                                                         stay_buffer[:N_send_l],
                                                         -1*stay_buffer[:N_send_l])
         # Apply right particle boundary conditions
@@ -345,14 +345,14 @@ def remove_particles_gpu(species, fld, n_guard, left_proc, right_proc):
             if species.particle_boundaries['zmax'] == 'reflective':
                 # uz = -1uz
                 if i_attr == 5:
-                    stay_buffer[species.Ntot-N_send_r:] = np.where(stay_buffer[species.Ntot-N_send_r:] > 0,
+                    stay_buffer[species.Ntot-N_send_r:] = cupy.where(stay_buffer[species.Ntot-N_send_r:] > 0,
                                                                     stay_buffer[species.Ntot-N_send_r:],
                                                                     -1*stay_buffer[species.Ntot-N_send_r:])
             if species.particle_boundaries['zmax'] == 'bounce':
                 # ux, uy, uz = -1ux, -1,uy, -1uz
                 if i_attr > 2 and i_attr < 6:
                     particle_array_uz = getattr( attr_list[5][0], attr_list[5][1] )
-                    stay_buffer[species.Ntot-N_send_r:] = np.where(particle_array_uz[species.Ntot-N_send_r:] > 0,
+                    stay_buffer[species.Ntot-N_send_r:] = cupy.where(particle_array_uz[species.Ntot-N_send_r:] > 0,
                                                                     stay_buffer[species.Ntot-N_send_r:],
                                                                     -1*stay_buffer[species.Ntot-N_send_r:])
 
