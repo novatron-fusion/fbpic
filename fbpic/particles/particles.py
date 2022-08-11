@@ -162,6 +162,8 @@ class Particles(object) :
             self.use_cuda = False
         self.data_is_on_gpu = False # Data is initialized on the CPU
 
+        self.zmin = zmin
+        self.zmax = zmax
         self.particle_boundaries = particle_boundaries
 
         # Generate evenly-spaced particles
@@ -516,6 +518,39 @@ class Particles(object) :
         if self.compton_scatterer is not None:
             self.compton_scatterer.handle_scattering( self, t )
 
+    def handle_particle_boundaries( self ):
+        """
+        Handle particle boundary conditions
+        """
+        if self.particle_boundaries['zmin'] == 'reflective' \
+            or self.particle_boundaries['zmin'] == 'bounce':
+            reflect_left = ( self.z < self.zmin )
+            if self.particle_boundaries['zmin'] == 'reflective':
+                self.uz[reflect_left] = -1*self.uz[reflect_left]
+                self.z[reflect_left] = (self.zmin - self.z[reflect_left]) + self.zmin
+            
+            if self.particle_boundaries['zmin'] == 'bounce':
+                self.ux[reflect_left] = -1*self.ux[reflect_left]
+                self.uy[reflect_left] = -1*self.uy[reflect_left]
+                self.uz[reflect_left] = -1*self.uz[reflect_left]
+                self.x[reflect_left] = -1*self.x[reflect_left]
+                self.y[reflect_left] = -1*self.y[reflect_left]
+                self.z[reflect_left] = (self.zmin - self.z[reflect_left]) + self.zmin
+
+        if self.particle_boundaries['zmax'] == 'reflective' \
+            or self.particle_boundaries['zmax'] == 'bounce':
+            reflect_right = ( self.z > self.zmax )
+            if self.particle_boundaries['zmax'] == 'reflective':
+                self.uz[reflect_right] = -1*self.uz[reflect_right]
+                self.z[reflect_right] = (self.zmax - self.z[reflect_right]) - self.zmax
+
+            if self.particle_boundaries['zmin'] == 'bounce':
+                self.ux[reflect_right] = -1*self.ux[reflect_right]
+                self.uy[reflect_right] = -1*self.uy[reflect_right]
+                self.uz[reflect_right] = -1*self.uz[reflect_right]
+                self.x[reflect_right] = -1*self.x[reflect_right]
+                self.y[reflect_right] = -1*self.y[reflect_right]
+                self.z[reflect_right] = (self.zmax - self.z[reflect_right]) - self.zmax
 
     def rearrange_particle_arrays( self ):
         """

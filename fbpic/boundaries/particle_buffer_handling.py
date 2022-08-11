@@ -125,19 +125,6 @@ def remove_particles_cpu(species, fld, n_guard, left_proc, right_proc):
         # No need to allocate and copy data ; return an empty array
         float_send_left = np.empty((n_float, 0), dtype=np.float64)
         uint_send_left = np.empty((n_int, 0), dtype=np.uint64)
-        if species.particle_boundaries['zmin'] == 'reflective':
-            selec_stay |= selec_left
-            species.uz[selec_left] = -1*species.uz[selec_left]
-            species.z[selec_left] = (zbox_min - species.z[selec_left]) - zbox_min
-        if species.particle_boundaries['zmin'] == 'bounce':
-            selec_stay |= selec_left
-            species.ux[selec_left] = -1*species.ux[selec_left]
-            species.uy[selec_left] = -1*species.uy[selec_left]
-            species.uz[selec_left] = -1*species.uz[selec_left]
-            species.x[selec_left] = -1*species.x[selec_left]
-            species.y[selec_left] = -1*species.y[selec_left]
-            species.z[selec_left] = (zbox_min - species.z[selec_left]) - zbox_min
-
 
     # Allocate and fill right sending buffer
     if right_proc is not None:
@@ -164,18 +151,6 @@ def remove_particles_cpu(species, fld, n_guard, left_proc, right_proc):
         # No need to allocate and copy data ; return an empty array
         float_send_right = np.empty((n_float, 0), dtype = np.float64)
         uint_send_right = np.empty((n_int, 0), dtype=np.float64)
-        if species.particle_boundaries['zmax'] == 'reflective':
-            selec_stay |= selec_right
-            species.uz[selec_right] = -1*species.uz[selec_right]
-            species.z[selec_right] = (species.z[selec_right] - zbox_max)
-        if species.particle_boundaries['zmax'] == 'bounce':
-            selec_stay |= selec_right
-            species.ux[selec_right] = -1*species.ux[selec_right]
-            species.uy[selec_right] = -1*species.uy[selec_right]
-            species.uz[selec_right] = -1*species.uz[selec_right]
-            species.x[selec_right] = -1*species.x[selec_right]
-            species.y[selec_right] = -1*species.y[selec_right]
-            species.z[selec_right] = (species.z[selec_right] - zbox_max)
 
     # Resize the particle arrays
     N_stay = selec_stay.sum()
@@ -229,8 +204,6 @@ def remove_particles_gpu(species, fld, n_guard, left_proc, right_proc):
         proc and right proc respectively, and where n_float and n_int
         are the number of float and integer quantities respectively
     """
-    zbox_min = fld.interp[0].zmin + n_guard*fld.interp[0].dz
-    zbox_max = fld.interp[0].zmax - n_guard*fld.interp[0].dz
     # Check if particles are sorted
     # (The particles are usually expected to be sorted from the previous
     # iteration at this point - except at the first iteration of `step`.)
@@ -261,20 +234,6 @@ def remove_particles_gpu(species, fld, n_guard, left_proc, right_proc):
     new_Ntot = i_max - i_min
     N_send_l = i_min
     N_send_r = species.Ntot - i_max
-
-    # If 'reflective' or 'bounce' particle boundaries are used
-    # then the particles should not be removed
-    if left_proc is None:
-        if species.particle_boundaries['zmin'] == 'reflective' \
-            or species.particle_boundaries['zmin'] == 'bounce':
-            new_Ntot = new_Ntot + i_min
-            i_min = 0
-
-    if right_proc is None:
-        if species.particle_boundaries['zmax'] == 'reflective' \
-            or species.particle_boundaries['zmax'] == 'bounce':
-            new_Ntot = new_Ntot + (species.Ntot - i_max)
-            i_max = 0
 
     # Allocate the sending buffers on the CPU
     n_float = species.n_float_quantities
@@ -318,37 +277,6 @@ def remove_particles_gpu(species, fld, n_guard, left_proc, right_proc):
         particle_array = getattr( attr_list[i_attr][0], attr_list[i_attr][1] )
         split_particles_to_buffers[dim_grid_1d, dim_block_1d]( particle_array,
                     left_buffer, stay_buffer, right_buffer, i_min, i_max)
-
-        # Apply left particle boundary conditions
-        if left_proc is None:
-            if species.particle_boundaries['zmin'] == 'reflective':
-                # z = (zmin - z) and uz = -1uz
-                if i_attr == 2:
-                    stay_buffer[:N_send_l]  = (zbox_min - stay_buffer[:N_send_l]) + zbox_min
-                if i_attr == 5:
-                    stay_buffer[:N_send_l]  = -1*stay_buffer[:N_send_l]
-            if species.particle_boundaries['zmin'] == 'bounce':
-                # ux, uy, uz = -1ux, -1,uy, -1uz
-                if i_attr > 0 and i_attr < 6:
-                    if i_attr == 2:
-                        stay_buffer[:N_send_l] = (zbox_min - stay_buffer[:N_send_l]) + zbox_min
-                    else:
-                        stay_buffer[:N_send_l] = -1*stay_buffer[:N_send_l]
-        # Apply right particle boundary conditions
-        if right_proc is None:
-            if species.particle_boundaries['zmax'] == 'reflective':
-                # uz = -1uz
-                if i_attr == 2:
-                    stay_buffer[species.Ntot-N_send_r:] = zbox_max - (stay_buffer[species.Ntot-N_send_r:] - zbox_max) 
-                if i_attr == 5:
-                    stay_buffer[species.Ntot-N_send_r:] = -1*stay_buffer[species.Ntot-N_send_r:]
-            if species.particle_boundaries['zmax'] == 'bounce':
-                # ux, uy, uz = -1ux, -1,uy, -1uz
-                if i_attr > 2 and i_attr < 6:
-                    if i_attr == 2:
-                        stay_buffer[species.Ntot-N_send_r:] = zbox_max - (stay_buffer[species.Ntot-N_send_r:] - zbox_max)
-                    else:
-                        stay_buffer[species.Ntot-N_send_r:] = -1*stay_buffer[species.Ntot-N_send_r:] 
 
         # Assign the stay_buffer to the initial particle data array
         # and fill the sending buffers (if needed for MPI)

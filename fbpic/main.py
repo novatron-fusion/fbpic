@@ -502,6 +502,7 @@ class Simulation(object):
             for antenna in self.laser_antennas:
                 antenna.update_v( self.time + 0.5*dt )
                 antenna.push_x( 0.5*dt )
+
             # Shift the boundaries of the grid for the Galilean frame
             if self.use_galilean:
                 self.shift_galilean_boundaries( 0.5*dt )
@@ -511,6 +512,11 @@ class Simulation(object):
             # (e.g. ionization, Compton scattering, ...)
             for species in ptcl:
                 species.handle_elementary_processes( self.time + 0.5*dt )
+             
+            # Handle particle boundaries
+            # e.g. reflection or bounce 
+            for species in ptcl:
+                species.handle_particle_boundaries()
 
             # Fields are not used beyond this point ; no need to keep sorted
             for species in ptcl:
@@ -530,6 +536,12 @@ class Simulation(object):
             # Get positions for antenna particles at t = (n+1) dt
             for antenna in self.laser_antennas:
                 antenna.push_x( 0.5*dt )
+
+            # Handle particle boundaries
+            # e.g. reflection or bounce 
+            for species in ptcl:
+                species.handle_particle_boundaries()
+                
             # Shift the boundaries of the grid for the Galilean frame
             if self.use_galilean:
                 self.shift_galilean_boundaries( 0.5*dt )
