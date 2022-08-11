@@ -24,6 +24,10 @@ from .gathering.threading_methods_one_mode import erase_eb_numba, \
 from .deposition.threading_methods import \
         deposit_rho_numba_linear, deposit_rho_numba_cubic, \
         deposit_J_numba_linear, deposit_J_numba_cubic
+from .boundary.numba_methods import reflect_particles_left_numba, \
+    reflect_particles_right_numba, bounce_particles_left_numba, \
+    bounce_particles_right_numba \
+                        
 
 # Check if threading is enabled
 from fbpic.utils.threading import nthreads, get_chunk_indices
@@ -47,6 +51,9 @@ if cuda_installed:
     from .utilities.cuda_sorting import write_sorting_buffer, \
         get_cell_idx_per_particle, sort_particles_per_cell, \
         prefill_prefix_sum, incl_prefix_sum
+    from .boundary.cuda_methods import reflect_particles_left, \
+        reflect_particles_right, bounce_particles_left, \
+        bounce_particles_right
 
 class Particles(object) :
     """
@@ -524,33 +531,47 @@ class Particles(object) :
         """
         if self.particle_boundaries['zmin'] == 'reflective' \
             or self.particle_boundaries['zmin'] == 'bounce':
-            reflect_left = ( self.z < self.zmin )
-            if self.particle_boundaries['zmin'] == 'reflective':
-                self.uz[reflect_left] = -1*self.uz[reflect_left]
-                self.z[reflect_left] = (self.zmin - self.z[reflect_left]) + self.zmin
-            
-            if self.particle_boundaries['zmin'] == 'bounce':
-                self.ux[reflect_left] = -1*self.ux[reflect_left]
-                self.uy[reflect_left] = -1*self.uy[reflect_left]
-                self.uz[reflect_left] = -1*self.uz[reflect_left]
-                self.x[reflect_left] = -1*self.x[reflect_left]
-                self.y[reflect_left] = -1*self.y[reflect_left]
-                self.z[reflect_left] = (self.zmin - self.z[reflect_left]) + self.zmin
+            if self.use_cuda:
+                dim_grid_1d, dim_block_1d = cuda_tpb_bpg_1d( self.Ntot )
+                if self.particle_boundaries['zmin'] == 'reflective':
+                    reflect_particles_left[dim_grid_1d, dim_block_1d](
+                        self.zmin, self.z, self.uz)
+                
+                if self.particle_boundaries['zmin'] == 'bounce':
+                    bounce_particles_left[dim_grid_1d, dim_block_1d](
+                        self.zmin, self.x, self.y, self.z,
+                        self.ux, self.uy, self.uz)
+            else:
+                if self.particle_boundaries['zmin'] == 'reflective':
+                    reflect_particles_left_numba(self.zmin, self.z, 
+                        self.uz, self.Ntot)
+                
+                if self.particle_boundaries['zmin'] == 'bounce':
+                    bounce_particles_left_numba(self.zmin, self.x,
+                        self.y, self.z, self.ux,
+                        self.uy, self.uz, self.Ntot)
 
         if self.particle_boundaries['zmax'] == 'reflective' \
             or self.particle_boundaries['zmax'] == 'bounce':
-            reflect_right = ( self.z > self.zmax )
-            if self.particle_boundaries['zmax'] == 'reflective':
-                self.uz[reflect_right] = -1*self.uz[reflect_right]
-                self.z[reflect_right] = (self.zmax - self.z[reflect_right]) - self.zmax
-
-            if self.particle_boundaries['zmin'] == 'bounce':
-                self.ux[reflect_right] = -1*self.ux[reflect_right]
-                self.uy[reflect_right] = -1*self.uy[reflect_right]
-                self.uz[reflect_right] = -1*self.uz[reflect_right]
-                self.x[reflect_right] = -1*self.x[reflect_right]
-                self.y[reflect_right] = -1*self.y[reflect_right]
-                self.z[reflect_right] = (self.zmax - self.z[reflect_right]) - self.zmax
+            if self.use_cuda:
+                dim_grid_1d, dim_block_1d = cuda_tpb_bpg_1d( self.Ntot )
+                if self.particle_boundaries['zmax'] == 'reflective':
+                    reflect_particles_right[dim_grid_1d, dim_block_1d](
+                        self.zmax, self.z, self.uz)
+                
+                if self.particle_boundaries['zmax'] == 'bounce':
+                    bounce_particles_right[dim_grid_1d, dim_block_1d](
+                        self.zmax, self.x, self.y, self.z,
+                        self.ux, self.uy, self.uz)
+            else:
+                if self.particle_boundaries['zmax'] == 'reflective':
+                    reflect_particles_right_numba(self.zmax, self.z,
+                        self.uz, self.Ntot)
+                
+                if self.particle_boundaries['zmax'] == 'bounce':
+                    bounce_particles_right_numba(self.zmax, self.x,
+                        self.y, self.z, self.ux,
+                        self.uy, self.uz, self.Ntot)
 
     def rearrange_particle_arrays( self ):
         """
