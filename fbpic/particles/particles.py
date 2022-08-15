@@ -25,8 +25,8 @@ from .deposition.threading_methods import \
         deposit_rho_numba_linear, deposit_rho_numba_cubic, \
         deposit_J_numba_linear, deposit_J_numba_cubic
 from .boundary.numba_methods import reflect_particles_left_numba, \
-    reflect_particles_right_numba, bounce_particles_left_numba, \
-    bounce_particles_right_numba \
+    reflect_particles_right_numba, stop_particles_left_numba, \
+    stop_particles_right_numba \
                         
 
 # Check if threading is enabled
@@ -52,8 +52,8 @@ if cuda_installed:
         get_cell_idx_per_particle, sort_particles_per_cell, \
         prefill_prefix_sum, incl_prefix_sum
     from .boundary.cuda_methods import reflect_particles_left, \
-        reflect_particles_right, bounce_particles_left, \
-        bounce_particles_right
+        reflect_particles_right, stop_particles_left, \
+        stop_particles_right
 
 class Particles(object) :
     """
@@ -151,12 +151,11 @@ class Particles(object) :
         particle_boundaries: dict, optional
             A dictionary with 'zmin' and 'zmax' as keys, and strings as values.
             This specifies the particle boundary in the longitudinal (z) direction
-              - `boundaries['z']` can be either `'reflective'` or `'open'`.
-              - `'open'` particles that leave the domain will be removed
-              - `'reflective'` particles reflect at the domain boundary, i.e.
-                uz = -1uz
-              - `'bounce'` particles bounce back at the boundary, i.e.
-              ux = -1ux, uy = -1uy, and uz = -1uz.
+              - `boundaries['z']` can be either `'open'`, `'reflective'`, `'stop'`.
+              - `'open'` particles that leave the domain will be removed.
+              - `'reflective'` particles reflect at the domain boundary.
+              - `'stop'` particle momenta are set to 0.
+                
             If the EM-boundaries are periodic then the particles will be
             perodic as well.
         """
@@ -530,48 +529,44 @@ class Particles(object) :
         Handle particle boundary conditions
         """
         if self.particle_boundaries['zmin'] == 'reflective' \
-            or self.particle_boundaries['zmin'] == 'bounce':
+            or self.particle_boundaries['zmin'] == 'stop':
             if self.use_cuda:
                 dim_grid_1d, dim_block_1d = cuda_tpb_bpg_1d( self.Ntot )
                 if self.particle_boundaries['zmin'] == 'reflective':
                     reflect_particles_left[dim_grid_1d, dim_block_1d](
                         self.zmin, self.z, self.uz)
                 
-                if self.particle_boundaries['zmin'] == 'bounce':
-                    bounce_particles_left[dim_grid_1d, dim_block_1d](
-                        self.zmin, self.x, self.y, self.z,
-                        self.ux, self.uy, self.uz)
+                if self.particle_boundaries['zmin'] == 'stop':
+                    stop_particles_left[dim_grid_1d, dim_block_1d](
+                        self.zmin, self.z, self.ux, self.uy, self.uz)
             else:
                 if self.particle_boundaries['zmin'] == 'reflective':
                     reflect_particles_left_numba(self.zmin, self.z, 
                         self.uz, self.Ntot)
                 
-                if self.particle_boundaries['zmin'] == 'bounce':
-                    bounce_particles_left_numba(self.zmin, self.x,
-                        self.y, self.z, self.ux,
-                        self.uy, self.uz, self.Ntot)
+                if self.particle_boundaries['zmin'] == 'stop':
+                    stop_particles_left_numba(self.zmin, self.z, 
+                        self.ux, self.uy, self.uz, self.Ntot)
 
         if self.particle_boundaries['zmax'] == 'reflective' \
-            or self.particle_boundaries['zmax'] == 'bounce':
+            or self.particle_boundaries['zmax'] == 'stop':
             if self.use_cuda:
                 dim_grid_1d, dim_block_1d = cuda_tpb_bpg_1d( self.Ntot )
                 if self.particle_boundaries['zmax'] == 'reflective':
                     reflect_particles_right[dim_grid_1d, dim_block_1d](
                         self.zmax, self.z, self.uz)
                 
-                if self.particle_boundaries['zmax'] == 'bounce':
-                    bounce_particles_right[dim_grid_1d, dim_block_1d](
-                        self.zmax, self.x, self.y, self.z,
-                        self.ux, self.uy, self.uz)
+                if self.particle_boundaries['zmax'] == 'stop':
+                    stop_particles_right[dim_grid_1d, dim_block_1d](
+                        self.zmax, self.z, self.ux, self.uy, self.uz)
             else:
                 if self.particle_boundaries['zmax'] == 'reflective':
                     reflect_particles_right_numba(self.zmax, self.z,
                         self.uz, self.Ntot)
                 
-                if self.particle_boundaries['zmax'] == 'bounce':
-                    bounce_particles_right_numba(self.zmax, self.x,
-                        self.y, self.z, self.ux,
-                        self.uy, self.uz, self.Ntot)
+                if self.particle_boundaries['zmax'] == 'stop':
+                    stop_particles_right_numba(self.zmax, self.z,
+                        self.ux, self.uy, self.uz, self.Ntot)
 
     def rearrange_particle_arrays( self ):
         """

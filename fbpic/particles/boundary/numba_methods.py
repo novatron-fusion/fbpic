@@ -1,5 +1,5 @@
 # Copyright 2016, FBPIC contributors
-# Authors: Remi Lehe, Manuel Kirchen
+# Authors: Remi Lehe, Manuel Kirchen, Kristoffer Lindvall
 # License: 3-Clause-BSD-LBNL
 """
 This file is part of the Fourier-Bessel Particle-In-Cell code (FB-PIC)
@@ -7,7 +7,6 @@ It defines the particle boundary methods on the CPU with numba.
 """
 import numba
 from fbpic.utils.threading import njit_parallel, prange
-# Compile the inline functions for CPU
 
 @njit_parallel
 def reflect_particles_left_numba( zmin, z, uz, Ntot ):
@@ -64,15 +63,15 @@ def reflect_particles_right_numba( zmax, z, uz, Ntot ):
     return z, uz
 
 @njit_parallel
-def bounce_particles_left_numba( zmin, x, y, z, ux, uy, uz, Ntot ):
+def stop_particles_left_numba( zmin, z, ux, uy, uz, Ntot ):
     """
-    Bounce particles at left boundary
+    Stop particles at left boundary. Particle momenta are set to 0.
 
     Parameters
     ----------
     zmin : left boundary position
 
-    x, y, z : 1darray of floats (in meters)
+    z : 1darray of floats (in meters)
         The position of the particles
         (is modified by this function)
 
@@ -83,25 +82,23 @@ def bounce_particles_left_numba( zmin, x, y, z, ux, uy, uz, Ntot ):
     """
     for ip in prange(Ntot):
         if z[ip] < zmin:
-            ux[ip] *= -1
-            uy[ip] *= -1
-            uz[ip] *= -1
-            x[ip] *= -1
-            y[ip] *= -1
-            z[ip] = ( zmin - z[ip] ) + zmin
+            ux[ip] = 0
+            uy[ip] = 0
+            uz[ip] = 0
+            z[ip] = zmin
 
-    return x, y, z, ux, uy, uz
+    return z, ux, uy, uz
 
 @njit_parallel
-def bounce_particles_right_numba( zmax, x, y, z, ux, uy, uz, Ntot ):
+def stop_particles_right_numba( zmax, z, ux, uy, uz, Ntot ):
     """
-    Bounce particles at right boundary
+    Stop particles at right boundary. Particle momenta are set to 0.
 
     Parameters
     ----------
     zmax : right boundary position
-    
-    x, y, z : 1darray of floats (in meters)
+
+    z : 1darray of floats (in meters)
         The position of the particles
         (is modified by this function)
 
@@ -112,11 +109,9 @@ def bounce_particles_right_numba( zmax, x, y, z, ux, uy, uz, Ntot ):
     """
     for ip in prange(Ntot):
         if z[ip] > zmax:
-            ux[ip] *= -1
-            uy[ip] *= -1
-            uz[ip] *= -1
-            x[ip] *= -1
-            y[ip] *= -1
-            z[ip] = zmax - ( z[ip] - zmax )
+            ux[ip] = 0
+            uy[ip] = 0
+            uz[ip] = 0
+            z[ip] = zmax
     
-    return x, y, z, ux, uy, uz
+    return z, ux, uy, uz
