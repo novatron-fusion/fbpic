@@ -16,12 +16,16 @@ def reflect_particles_left_numba( zmin, z, uz, Ntot ):
 
     Parameters
     ----------
-    x, y, z : 1darray of floats (in meters)
+    zmin : left boundary position
+
+    z : 1darray of floats (in meters)
         The position of the particles
         (is modified by this function)
 
-    ux, uy, uz : 1darray of floats (in meters * second^-1)
+    uz : 1darray of floats (in meters * second^-1)
         The velocity of the particles
+
+    Ntot : total number of particles
     """
 
     # Particle reflect (in parallel if threading is installed)
@@ -39,12 +43,16 @@ def reflect_particles_right_numba( zmax, z, uz, Ntot ):
 
     Parameters
     ----------
-    x, y, z : 1darray of floats (in meters)
+    zmax : right boundary position
+
+    z : 1darray of floats (in meters)
         The position of the particles
         (is modified by this function)
 
-    ux, uy, uz : 1darray of floats (in meters * second^-1)
+    uz : 1darray of floats (in meters * second^-1)
         The velocity of the particles
+
+    Ntot : total number of particles
     """
 
     # Particle reflect (in parallel if threading is installed)
@@ -62,12 +70,16 @@ def bounce_particles_left_numba( zmin, x, y, z, ux, uy, uz, Ntot ):
 
     Parameters
     ----------
+    zmin : left boundary position
+
     x, y, z : 1darray of floats (in meters)
         The position of the particles
         (is modified by this function)
 
     ux, uy, uz : 1darray of floats (in meters * second^-1)
         The velocity of the particles
+
+    Ntot : total number of particles
     """
     for ip in prange(Ntot):
         if z[ip] < zmin:
@@ -87,12 +99,16 @@ def bounce_particles_right_numba( zmax, x, y, z, ux, uy, uz, Ntot ):
 
     Parameters
     ----------
+    zmax : right boundary position
+    
     x, y, z : 1darray of floats (in meters)
         The position of the particles
         (is modified by this function)
 
     ux, uy, uz : 1darray of floats (in meters * second^-1)
         The velocity of the particles
+
+    Ntot : total number of particles
     """
     for ip in prange(Ntot):
         if z[ip] > zmax:
