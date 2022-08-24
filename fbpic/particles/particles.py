@@ -108,10 +108,10 @@ class Particles(object) :
         dt: float (in seconds)
            The timestep for the particle pusher
 
-        ux_m, uy_m, uz_m: floats (dimensionless), optional
+        ux_m, uy_m, uz_m : floats (dimensionless), optional
            Normalized mean momenta of the injected particles in each direction
 
-        ux_th, uy_th, uz_th: floats (dimensionless), optional
+        ux_th, uy_th, uz_th : floats (dimensionless), optional
            Normalized thermal momenta in each direction
 
         dens_func: callable, optional
@@ -127,13 +127,13 @@ class Particles(object) :
            Whether to continuously inject the particles,
            in the case of a moving window
 
-        grid_shape: tuple, optional
+        grid_shape : tuple, optional
             Needed when running on the GPU
             The shape of the local grid (including guard cells), i.e.
             a tuple of the form (Nz, Nr). This is needed in order
             to initialize the sorting of the particles per cell.
 
-        particle_shape: str, optional
+        particle_shape : str, optional
             Set the particle shape for the charge/current deposition.
             Possible values are 'linear' and 'cubic' for first and third
             order particle shape factors.
@@ -141,7 +141,7 @@ class Particles(object) :
         use_cuda: bool, optional
             Wether to use the GPU or not.
 
-        dz_particles: float (in meter), optional
+        dz_particles : float (in meter), optional
             The spacing between particles in `z` (for continuous injection)
             In most cases, the spacing between particles can be inferred
             from the arguments `zmin`, `zmax` and `Npz`. However, when
@@ -220,6 +220,7 @@ class Particles(object) :
         # (see method make_ionizable and activate_compton)
         self.ionizer = None
         self.compton_scatterer = None
+        self.collisions = None
         # Total number of quantities (necessary in MPI communications)
         self.n_integer_quantities = 0
         self.n_float_quantities = 8 # x, y, z, ux, uy, uz, inv_gamma, w
@@ -249,7 +250,7 @@ class Particles(object) :
             # (because they are swapped with these arrays during sorting)
             self.sorting_buffer = np.empty( Ntot, dtype=np.float64)
 
-            # Register integer thta records shift in the indices,
+            # Register integer that records shift in the indices,
             # induced by the moving window
             self.prefix_sum_shift = 0
             # Register boolean that records if the particles are sorted or not
@@ -568,6 +569,51 @@ class Particles(object) :
                     stop_particles_right_numba(self.zmax, self.z,
                         self.ux, self.uy, self.uz, self.Ntot)
 
+    def handle_particle_boundaries( self ):
+        """
+        Handle particle boundary conditions
+        """
+        if self.particle_boundaries['zmin'] == 'reflective' \
+            or self.particle_boundaries['zmin'] == 'stop':
+            if self.use_cuda:
+                dim_grid_1d, dim_block_1d = cuda_tpb_bpg_1d( self.Ntot )
+                if self.particle_boundaries['zmin'] == 'reflective':
+                    reflect_particles_left[dim_grid_1d, dim_block_1d](
+                        self.zmin, self.z, self.uz)
+                
+                if self.particle_boundaries['zmin'] == 'stop':
+                    stop_particles_left[dim_grid_1d, dim_block_1d](
+                        self.zmin, self.z, self.ux, self.uy, self.uz)
+            else:
+                if self.particle_boundaries['zmin'] == 'reflective':
+                    reflect_particles_left_numba(self.zmin, self.z, 
+                        self.uz, self.Ntot)
+                
+                if self.particle_boundaries['zmin'] == 'stop':
+                    stop_particles_left_numba(self.zmin, self.z, 
+                        self.ux, self.uy, self.uz, self.Ntot)
+
+        if self.particle_boundaries['zmax'] == 'reflective' \
+            or self.particle_boundaries['zmax'] == 'stop':
+            if self.use_cuda:
+                dim_grid_1d, dim_block_1d = cuda_tpb_bpg_1d( self.Ntot )
+                if self.particle_boundaries['zmax'] == 'reflective':
+                    reflect_particles_right[dim_grid_1d, dim_block_1d](
+                        self.zmax, self.z, self.uz)
+                
+                if self.particle_boundaries['zmax'] == 'stop':
+                    stop_particles_right[dim_grid_1d, dim_block_1d](
+                        self.zmax, self.z, self.ux, self.uy, self.uz)
+            else:
+                if self.particle_boundaries['zmax'] == 'reflective':
+                    reflect_particles_right_numba(self.zmax, self.z,
+                        self.uz, self.Ntot)
+                
+                if self.particle_boundaries['zmax'] == 'stop':
+                    stop_particles_right_numba(self.zmax, self.z,
+                        self.ux, self.uy, self.uz, self.Ntot)
+
+
     def rearrange_particle_arrays( self ):
         """
         Rearranges the particle data arrays to match with the sorted
@@ -614,6 +660,7 @@ class Particles(object) :
             setattr( attr[0], attr[1], self.int_sorting_buffer)
             # Assign the old particle data array to the particle buffer
             self.int_sorting_buffer = particle_array
+
 
     def push_p( self, t ) :
         """
@@ -730,6 +777,7 @@ class Particles(object) :
                 self.ux, self.uy, self.uz,
                 self.inv_gamma, self.Ntot,
                 dt, x_push, y_push, z_push )
+
 
     def gather( self, grid, comm ) :
         """
@@ -896,6 +944,7 @@ class Particles(object) :
                 raise ValueError("`particle_shape` should be either \
                                   'linear' or 'cubic' \
                                    but is `%s`" % self.particle_shape)
+
 
     def deposit( self, fld, fieldtype ) :
         """
@@ -1110,7 +1159,7 @@ class Particles(object) :
     def sort_particles(self, fld):
         """
         Sort the particles by performing the following steps:
-        1. Get fied cell index
+        1. Get field cell index
         2. Sort field cell index
         3. Parallel prefix sum
         4. Rearrange particle arrays
