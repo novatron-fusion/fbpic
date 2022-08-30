@@ -130,7 +130,7 @@ class MCCollisions(object):
 
             assert cupy.sum( npart1 ) > 0
             assert cupy.sum( npart2 ) > 0
-            
+
             intra = True if self.species1 == self.species2 else False
 
             # Calculate number of pairs in cell
@@ -173,6 +173,7 @@ class MCCollisions(object):
             cell_idx = cupy.empty(npairs_tot, dtype=np.int32)
             get_cell_idx_per_pair_cuda[ bpg, tpg ](N_cells, cell_idx, npairs, prefix_sum_pair)
 
+
             # Shuffled index of particle 1
             shuffled_idx1 = cupy.empty(npairs_tot, dtype=np.int32)
             seed = np.random.randint( 256 )
@@ -191,7 +192,7 @@ class MCCollisions(object):
 
             # Calculate sum of minimum weights in each cell
             n12 = allocate_empty(N_cells, use_cuda, dtype=np.float64)
-            n12_per_cell_cuda[ bpg, tpg ](N_cells, n12, w1, w2,
+            n12_per_cell_cuda[ bpg, tpg ](N_cells, n12, w1, w2, d_invvol, Nz,
                       npairs, shuffled_idx1, shuffled_idx2,
 					  prefix_sum_pair, prefix_sum1, prefix_sum2)
             
@@ -213,7 +214,7 @@ class MCCollisions(object):
                         q1, q2, w1, w2,
                         ux1, uy1, uz1,
                         ux2, uy2, uz2,
-                        dt, self.coulomb_log,
+                        dt, self.coulomb_log, self.period,
                         random_states, self.debug,
                         param_s, param_logL)
 

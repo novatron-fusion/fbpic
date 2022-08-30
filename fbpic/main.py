@@ -508,6 +508,11 @@ class Simulation(object):
             if self.use_galilean:
                 self.shift_galilean_boundaries( 0.5*dt )
 
+            # Handle particle boundaries
+            # e.g. reflection or bounce 
+            for species in ptcl:
+                species.handle_particle_boundaries()
+
             # Handle elementary processes at t = (n + 1/2)dt
             # i.e. when the particles' velocity and position are synchronized
             # (e.g. ionization, Compton scattering, ...)
@@ -535,6 +540,11 @@ class Simulation(object):
             # Shift the boundaries of the grid for the Galilean frame
             if self.use_galilean:
                 self.shift_galilean_boundaries( 0.5*dt )
+
+            # Handle particle boundaries
+            # e.g. reflection or bounce 
+            for species in ptcl:
+                species.handle_particle_boundaries()
 
             # Get the charge density at t = (n+1) dt
             self.deposit('rho_next', exchange=(use_true_rho is True))
@@ -807,7 +817,8 @@ class Simulation(object):
                             uz_m=0., ux_m=0., uy_m=0.,
                             uz_th=0., ux_th=0., uy_th=0.,
                             continuous_injection=True,
-                            boost_positions_in_dens_func=False ):
+                            boost_positions_in_dens_func=False,
+                            particle_boundaries={'zmin':'open', 'zmax':'open'} ):
         """
         Create a new species (i.e. an instance of `Particles`) with
         charge `q` and mass `m`. Add it to the simulation (i.e. to the list
@@ -891,6 +902,13 @@ class Simulation(object):
         boost_positions_in_dens_func: bool, optional
            For boosted-frame simulations: whether to automatically take into
            account the Lorentz transformation of the positions, in `dens_func`
+
+        particle_boundaries : dict, optional
+            A dictionary with 'rmax' as key, and strings as values.
+            This specifies the particle boundary in the radial (r) direction
+              - boundaries can be either `'open'` or `'reflective'`.
+              - `'open'` particles that leave the domain will be removed.
+              - `'reflective'` particles reflect at the domain boundary.
 
         Returns
         -------
@@ -1000,7 +1018,8 @@ class Simulation(object):
                         ux_m=ux_m, uy_m=uy_m, uz_m=uz_m,
                         ux_th=ux_th, uy_th=uy_th, uz_th=uz_th,
                         continuous_injection=continuous_injection,
-                        dz_particles=dz_particles )
+                        dz_particles=dz_particles,
+                        particle_boundaries=particle_boundaries )
 
         # Add it to the list of species and return it to the user
         self.ptcl.append( new_species )

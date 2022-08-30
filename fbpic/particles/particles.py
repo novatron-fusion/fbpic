@@ -24,9 +24,7 @@ from .gathering.threading_methods_one_mode import erase_eb_numba, \
 from .deposition.threading_methods import \
         deposit_rho_numba_linear, deposit_rho_numba_cubic, \
         deposit_J_numba_linear, deposit_J_numba_cubic
-from .boundaries.numba_methods import reflect_particles_left_numba, \
-    reflect_particles_right_numba, stop_particles_left_numba, \
-    stop_particles_right_numba \
+from .boundaries.numba_methods import reflect_particles_radially_numba
 
 # Check if threading is enabled
 from fbpic.utils.threading import nthreads, get_chunk_indices
@@ -50,9 +48,7 @@ if cuda_installed:
     from .utilities.cuda_sorting import write_sorting_buffer, \
         get_cell_idx_per_particle, sort_particles_per_cell, \
         prefill_prefix_sum, incl_prefix_sum
-    from .boundaries.cuda_methods import reflect_particles_left, \
-        reflect_particles_right, stop_particles_left, \
-        stop_particles_right
+    from .boundaries.cuda_methods import reflect_particles_radially_cuda
 
 class Particles(object) :
     """
@@ -74,7 +70,7 @@ class Particles(object) :
                     dens_func=None, continuous_injection=True,
                     grid_shape=None, particle_shape='linear',
                     use_cuda=False, dz_particles=None,
-                    particle_boundaries={'zmin':'open', 'zmax':'open'}):
+                    particle_boundaries={'rmax':'open'}):
         """
         Initialize a uniform set of particles
 
@@ -168,6 +164,7 @@ class Particles(object) :
 
         self.zmin = zmin
         self.zmax = zmax
+        self.rmax = rmax
         self.particle_boundaries = particle_boundaries
 
         # Generate evenly-spaced particles
@@ -255,8 +252,8 @@ class Particles(object) :
             self.sorted = False
 
             # Allocate arrays for cell quantities, e.g. density and temperature
-            self.density = cupy.empty( Nz*Nr, dtype=np.float64)
-            self.temperature = cupy.empty( Nz*Nr, dtype=np.float64)
+            self.density = cupy.empty( Nz*(Nr+1), dtype=np.float64)
+            self.temperature = cupy.empty( Nz*(Nr+1), dtype=np.float64)
             # Register boolean that records if the cell quantities have
             # been previously calculated
             self.calc = False
@@ -537,46 +534,14 @@ class Particles(object) :
         """
         Handle particle boundary conditions
         """
-        if self.particle_boundaries['zmin'] == 'reflective' \
-            or self.particle_boundaries['zmin'] == 'stop':
+        if self.particle_boundaries['rmax'] == 'reflective':
             if self.use_cuda:
                 dim_grid_1d, dim_block_1d = cuda_tpb_bpg_1d( self.Ntot )
-                if self.particle_boundaries['zmin'] == 'reflective':
-                    reflect_particles_left[dim_grid_1d, dim_block_1d](
-                        self.zmin, self.z, self.uz)
-                
-                if self.particle_boundaries['zmin'] == 'stop':
-                    stop_particles_left[dim_grid_1d, dim_block_1d](
-                        self.zmin, self.z, self.ux, self.uy, self.uz)
+                reflect_particles_radially_cuda[dim_grid_1d, dim_block_1d](
+                    self.rmax, self.x, self.y, self.ux, self.uy)
             else:
-                if self.particle_boundaries['zmin'] == 'reflective':
-                    reflect_particles_left_numba(self.zmin, self.z, 
-                        self.uz, self.Ntot)
-                
-                if self.particle_boundaries['zmin'] == 'stop':
-                    stop_particles_left_numba(self.zmin, self.z, 
-                        self.ux, self.uy, self.uz, self.Ntot)
-
-        if self.particle_boundaries['zmax'] == 'reflective' \
-            or self.particle_boundaries['zmax'] == 'stop':
-            if self.use_cuda:
-                dim_grid_1d, dim_block_1d = cuda_tpb_bpg_1d( self.Ntot )
-                if self.particle_boundaries['zmax'] == 'reflective':
-                    reflect_particles_right[dim_grid_1d, dim_block_1d](
-                        self.zmax, self.z, self.uz)
-                
-                if self.particle_boundaries['zmax'] == 'stop':
-                    stop_particles_right[dim_grid_1d, dim_block_1d](
-                        self.zmax, self.z, self.ux, self.uy, self.uz)
-            else:
-                if self.particle_boundaries['zmax'] == 'reflective':
-                    reflect_particles_right_numba(self.zmax, self.z,
-                        self.uz, self.Ntot)
-                
-                if self.particle_boundaries['zmax'] == 'stop':
-                    stop_particles_right_numba(self.zmax, self.z,
-                        self.ux, self.uy, self.uz, self.Ntot)
-
+                reflect_particles_radially_numba(self.rmax, self.x, self.y,
+                                                self.ux, self.uy, self.Ntot)
 
     def rearrange_particle_arrays( self ):
         """

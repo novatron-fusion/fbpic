@@ -57,7 +57,7 @@ def density_per_cell_cuda(N_batch, density, weights, npart,
 
 
 @compile_cupy
-def n12_per_cell_cuda(N_batch, n12, w1, w2,
+def n12_per_cell_cuda(N_batch, n12, w1, w2, d_invvol, Nz,
                       npairs, shuffled_idx1, shuffled_idx2,
                       prefix_sum_pair, prefix_sum1, prefix_sum2):
     """
@@ -85,7 +85,8 @@ def n12_per_cell_cuda(N_batch, n12, w1, w2,
                 sum += w1[i_min1+si1]
             else:
                 sum += w2[i_min2+si2]
-        n12[i] = sum
+        invvol = d_invvol[int(i / Nz)]
+        n12[i] = sum * invvol
 
 
 @compile_cupy
@@ -238,7 +239,7 @@ def perform_collisions_cuda(N_batch, batch_size, npairs_tot,
                             q1, q2, w1, w2,
                             ux1, uy1, uz1,
                             ux2, uy2, uz2,
-                            dt, coulomb_log,
+                            dt, coulomb_log, period,
                             random_states, debug,
                             param_s, param_logL):
     """
@@ -317,7 +318,7 @@ def perform_collisions_cuda(N_batch, batch_size, npairs_tot,
                     coulomb_log = 2.
 
             coeff1 = 1. / (4. * m.pi * epsilon_0**2 * c**3)
-            term1 = n1[cell] * n2[cell] * dt / n12[cell]
+            term1 = n1[cell] * n2[cell] * period * dt / n12[cell]
             term2 = coeff1 * qqm2 / (gamma1 * gamma2)
             term3 = COM_gamma * inv_g12 * u_COM
             term4 = (gamma1_COM * gamma2_COM * invu_COM2 + m12)
@@ -325,11 +326,8 @@ def perform_collisions_cuda(N_batch, batch_size, npairs_tot,
             # Calculate the collision parameter s12
             s12 = coulomb_log * term1 * term2 * term3 * term4 * term4
 
-            # Low temperature correction
-            v_rel = m.sqrt((ux1[si1] - ux2[si2])**2
-                            + (uy1[si1] - uy2[si2])**2
-                            + (uz1[si1] - uz2[si2])**2)
-            s_prime = (4.*m.pi/3)**(1/3) * term1 * \
+            v_rel = u_COM / ( COM_gamma * inv_g12 * gamma1_COM * gamma2_COM )
+            s_prime = (4. * m.pi / 3.)**(1/3) * term1 * \
                 ((m1 + m2) / max(m1 * n1[cell]**(2/3), m2 * n2[cell]**(2/3))) * \
                 v_rel
 
@@ -345,7 +343,7 @@ def perform_collisions_cuda(N_batch, batch_size, npairs_tot,
             # Calculate the deflection angle
             U = xoroshiro128p_uniform_float64(
                 random_states, i)    # random float [0,1]
-            if s12 < 4:
+            if s < 4:
                 a = 0.37 * s - 0.005 * s**2 - 0.0064 * s**3
                 sin2X2 = a * U / m.sqrt(1 - U + a**2 * U)
                 cosX = 1. - 2. * sin2X2
