@@ -577,51 +577,6 @@ class Particles(object) :
                     stop_particles_right_numba(self.zmax, self.z,
                         self.ux, self.uy, self.uz, self.Ntot)
 
-    def handle_particle_boundaries( self ):
-        """
-        Handle particle boundary conditions
-        """
-        if self.particle_boundaries['zmin'] == 'reflective' \
-            or self.particle_boundaries['zmin'] == 'stop':
-            if self.use_cuda:
-                dim_grid_1d, dim_block_1d = cuda_tpb_bpg_1d( self.Ntot )
-                if self.particle_boundaries['zmin'] == 'reflective':
-                    reflect_particles_left[dim_grid_1d, dim_block_1d](
-                        self.zmin, self.z, self.uz)
-                
-                if self.particle_boundaries['zmin'] == 'stop':
-                    stop_particles_left[dim_grid_1d, dim_block_1d](
-                        self.zmin, self.z, self.ux, self.uy, self.uz)
-            else:
-                if self.particle_boundaries['zmin'] == 'reflective':
-                    reflect_particles_left_numba(self.zmin, self.z, 
-                        self.uz, self.Ntot)
-                
-                if self.particle_boundaries['zmin'] == 'stop':
-                    stop_particles_left_numba(self.zmin, self.z, 
-                        self.ux, self.uy, self.uz, self.Ntot)
-
-        if self.particle_boundaries['zmax'] == 'reflective' \
-            or self.particle_boundaries['zmax'] == 'stop':
-            if self.use_cuda:
-                dim_grid_1d, dim_block_1d = cuda_tpb_bpg_1d( self.Ntot )
-                if self.particle_boundaries['zmax'] == 'reflective':
-                    reflect_particles_right[dim_grid_1d, dim_block_1d](
-                        self.zmax, self.z, self.uz)
-                
-                if self.particle_boundaries['zmax'] == 'stop':
-                    stop_particles_right[dim_grid_1d, dim_block_1d](
-                        self.zmax, self.z, self.ux, self.uy, self.uz)
-            else:
-                if self.particle_boundaries['zmax'] == 'reflective':
-                    reflect_particles_right_numba(self.zmax, self.z,
-                        self.uz, self.Ntot)
-                
-                if self.particle_boundaries['zmax'] == 'stop':
-                    stop_particles_right_numba(self.zmax, self.z,
-                        self.ux, self.uy, self.uz, self.Ntot)
-
-
     def rearrange_particle_arrays( self ):
         """
         Rearranges the particle data arrays to match with the sorted
