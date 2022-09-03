@@ -65,5 +65,5 @@ def periodic_particles_radially_cuda(rmax, x, y):
                     theta = 3 * m.pi / 2
             else:
                 theta = m.atan( y[i] / x[i])
-            x[i] = ( rmax  - (r - rmax ) ) * m.cos(theta + 2 * m.pi)
-            y[i] = ( rmax  - (r - rmax ) ) * m.sin(theta + 2 * m.pi)
+            x[i] = ( rmax  - (r - rmax ) ) * m.cos(theta + m.pi)
+            y[i] = ( rmax  - (r - rmax ) ) * m.sin(theta + m.pi)

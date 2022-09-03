@@ -219,6 +219,7 @@ class MCCollisions(object):
                         param_s, param_logL)
 
             if self.debug:
+                print("\nmax_npair = ", cupy.max(npairs))
                 Nc1 = cupy.count_nonzero(self.species1.temperature)
                 Nc2 = cupy.count_nonzero(self.species2.temperature)
                 mean_T1 = cupy.sum( self.species1.temperature ) / Nc1
