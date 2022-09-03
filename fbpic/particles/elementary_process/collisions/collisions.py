@@ -18,7 +18,7 @@ from ..cuda_numba_utils import allocate_empty
 if cupy_installed:
     from fbpic.utils.cuda import cuda_tpb_bpg_1d
     from numba.cuda.random import create_xoroshiro128p_states
-    from .cuda_methods import perform_collisions_cuda, \
+    from .cuda_methods import perform_collisions_cuda, alt_perform_collisions_cuda, \
         density_per_cell_cuda, n12_per_cell_cuda, \
         temperature_per_cell_cuda, pairs_per_cell_cuda, \
         get_cell_idx_per_pair_cuda, get_shuffled_idx_per_particle_cuda
@@ -204,7 +204,7 @@ class MCCollisions(object):
             seed = np.random.randint( 256 )
             random_states = create_xoroshiro128p_states( N_batch, seed )
             bpg, tpg = cuda_tpb_bpg_1d( N_batch )
-            perform_collisions_cuda[ bpg, tpg ](N_batch, 
+            alt_perform_collisions_cuda[ bpg, tpg ](N_batch, 
                         self.batch_size, npairs_tot,
                         prefix_sum1, prefix_sum2,
                         shuffled_idx1, shuffled_idx2, cell_idx,
@@ -219,9 +219,10 @@ class MCCollisions(object):
                         param_s, param_logL)
 
             if self.debug:
-                N_cells_plasma = cell_idx[-1] - cell_idx[0]
-                mean_T1 = cupy.sum( self.species1.temperature ) / N_cells_plasma
-                mean_T2 = cupy.sum( self.species2.temperature ) / N_cells_plasma
+                Nc1 = cupy.count_nonzero(self.species1.temperature)
+                Nc2 = cupy.count_nonzero(self.species2.temperature)
+                mean_T1 = cupy.sum( self.species1.temperature ) / Nc1
+                mean_T2 = cupy.sum( self.species2.temperature ) / Nc2
                 max_T1 = cupy.max( self.species1.temperature )
                 max_T2 = cupy.max( self.species2.temperature )
 

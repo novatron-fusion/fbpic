@@ -48,7 +48,8 @@ if cuda_installed:
     from .utilities.cuda_sorting import write_sorting_buffer, \
         get_cell_idx_per_particle, sort_particles_per_cell, \
         prefill_prefix_sum, incl_prefix_sum
-    from .boundaries.cuda_methods import reflect_particles_radially_cuda
+    from .boundaries.cuda_methods import reflect_particles_radially_cuda, \
+        periodic_particles_radially_cuda
 
 class Particles(object) :
     """
@@ -149,9 +150,7 @@ class Particles(object) :
             Boundaries can be either `'open'`, `'reflective'`, or `'stop'`.
               - `'open'` particles that leave the domain will be removed.
               - `'reflective'` particles reflect at the domain boundary.
-              - `'stop'` particle momenta are set to 0.
-            If the EM-boundaries are periodic then the particles will be
-            perodic as well.
+              - `'periodic'` periodic boundary conditions
         """
         # Define whether or not to use the GPU
         self.use_cuda = use_cuda
@@ -542,6 +541,12 @@ class Particles(object) :
             else:
                 reflect_particles_radially_numba(self.rmax, self.x, self.y,
                                                 self.ux, self.uy, self.Ntot)
+
+        if self.particle_boundaries['rmax'] == 'periodic':
+            if self.use_cuda:
+                dim_grid_1d, dim_block_1d = cuda_tpb_bpg_1d( self.Ntot )
+                periodic_particles_radially_cuda[dim_grid_1d, dim_block_1d](
+                    self.rmax, self.x, self.y)
 
     def rearrange_particle_arrays( self ):
         """
