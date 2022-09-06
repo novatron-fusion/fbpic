@@ -464,6 +464,12 @@ class Simulation(object):
             # Main PIC iteration
             # ------------------
 
+            # Handle collisions
+            for collision in self.collisions:
+                if self.iteration % collision.period == 0 \
+                    and self.iteration >= collision.start:
+                    collision.handle_collisions( fld, dt )
+
             # Keep field arrays sorted throughout gathering+push
             for species in ptcl:
                 species.keep_fields_sorted = True
@@ -509,15 +515,6 @@ class Simulation(object):
             # (e.g. ionization, Compton scattering, ...)
             for species in ptcl:
                 species.handle_elementary_processes( self.time + 0.5*dt )
-
-            # Handle collisions
-            for collision in self.collisions:
-                if self.iteration % collision.period == 0 \
-                    and self.iteration >= collision.start:
-                    collision.handle_collisions( fld, 0.5*dt )
-            # Cell quantities need to be recalculated
-            for species in ptcl:
-                species.calc = False
 
             # Fields are not used beyond this point ; no need to keep sorted
             for species in ptcl:

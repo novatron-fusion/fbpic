@@ -51,6 +51,7 @@ if cuda_installed:
     from .boundaries.cuda_methods import reflect_particles_radially_cuda, \
         periodic_particles_radially_cuda
 
+
 class Particles(object) :
     """
     Class that contains the particles data of the simulation
@@ -249,13 +250,6 @@ class Particles(object) :
             self.prefix_sum_shift = 0
             # Register boolean that records if the particles are sorted or not
             self.sorted = False
-
-            # Allocate arrays for cell quantities, e.g. density and temperature
-            self.density = cupy.empty( Nz*(Nr+1), dtype=np.float64)
-            self.temperature = cupy.empty( Nz*(Nr+1), dtype=np.float64)
-            # Register boolean that records if the cell quantities have
-            # been previously calculated
-            self.calc = False
 
             # Define optimal number of CUDA threads per block for deposition
             # and gathering kernels (determined empirically)
@@ -547,6 +541,7 @@ class Particles(object) :
                 dim_grid_1d, dim_block_1d = cuda_tpb_bpg_1d( self.Ntot )
                 periodic_particles_radially_cuda[dim_grid_1d, dim_block_1d](
                     self.rmax, self.x, self.y)
+
 
     def rearrange_particle_arrays( self ):
         """
