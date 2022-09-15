@@ -180,11 +180,15 @@ def run_simulation():
 def calculate_temperature( mass, ux, uy, uz ):
     Np = int(len(ux))
 
-    vx_m = np.sum(ux)*c
-    vy_m = np.sum(uy)*c
-    vz_m = np.sum(uz)*c
+    gamma = np.array(Np)
 
-    v2 = np.sum(ux**2 + uy**2 + uz**2)*c**2
+    gamma = np.sqrt(1. + ux**2 + uy**2 + uz**2)
+
+    vx_m = np.sum(ux / gamma)*c
+    vy_m = np.sum(uy / gamma)*c
+    vz_m = np.sum(uz / gamma)*c
+
+    v2 = np.sum((ux**2 + uy**2 + uz**2) / gamma**2)*c**2
 
     invNp = (1. / Np)
     v2 *= invNp

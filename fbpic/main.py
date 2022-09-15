@@ -489,7 +489,7 @@ class Simulation(object):
                 species.gather( fld.interp, self.comm )
             # Apply the external fields at t = n dt
             for ext_field in self.external_fields:
-                ext_field.apply_expression( self.ptcl, self.time )
+                ext_field.apply_expression( self.ptcl, self.time, self.comm )
 
             # Run the diagnostics
             # (after gathering ; allows output of gathered fields on particles)

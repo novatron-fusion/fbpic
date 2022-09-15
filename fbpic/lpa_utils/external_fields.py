@@ -5,6 +5,8 @@ from numba import vectorize, float64, void, njit
 from scipy.constants import c
 inv_c = 1./c
 import numpy as np
+import cupy
+import math as m
 # Check if CUDA is available, then import CUDA functions
 from fbpic.utils.cuda import cuda_installed
 if cuda_installed:
@@ -14,7 +16,8 @@ if cuda_installed:
 class ExternalField( object ):
 
     def __init__(self, field_func, fieldtype, amplitude,
-                 length_scale, species=None, gamma_boost=None ):
+                 length_scale, species=None, gamma_boost=None,
+                 Nz=None, Nr=None ):
         """
         Initialize an ExternalField object, so that the function
         `field_func` is called at each time step on the field `fieldtype`
@@ -104,50 +107,57 @@ class ExternalField( object ):
         # Register the arguments
         self.length_scale = length_scale
         self.species = species
+        self.Nz = Nz
+        self.Nr = Nr
         # Check that fieldtype is a correct field
-        if (fieldtype in ['Ex', 'Ey', 'Ez', 'Bx', 'By', 'Bz']) is False:
-            raise ValueError("`fieldtype` must be one of Ex, Ey, Ez, Bx, By, Bz")
+        if (fieldtype in ['Ex', 'Ey', 'Ez', 'Bx', 'By', 'Bz', 'Br', 'Bt']) is False:
+            raise ValueError("`fieldtype` must be one of Ex, Ey, Ez, Bx, By, Bz, Br, Bt")
 
-        # Note: when `gamma_boost` is passed, the fields are evaluated in
-        # the boosted frame, even though the user-provided function corresponds
-        # to the lab frame. This is done (conceptually) in 2 steps:
-        # - the field is computed in the lab frame, by transforming
-        #   the current position/time of particles to the lab frame
-        # - the field is converted back to the boosted frame, by using
-        #   Lorentz transform formulas for E and B
-
-        # Modify user-input function, so as to evaluate field in the lab frame
-        if (gamma_boost is not None) and (gamma_boost != 1.):
-            beta_boost = np.sqrt(1. - 1./gamma_boost**2)
-            field_func = njit(field_func)
-            def func( F, x, y, z, t, amplitude, length_scale ):
-                zlab = gamma_boost*(z + beta_boost*c*t)
-                tlab = gamma_boost*(t + beta_boost*inv_c*z)
-                return field_func(F, x, y, zlab, tlab, amplitude, length_scale)
+        if type(field_func) is np.ndarray:
+            self.field_func = field_func
+            if cuda_installed:
+                self.field_func_d = cupy.asarray(field_func)
         else:
-            func = field_func
+            # Note: when `gamma_boost` is passed, the fields are evaluated in
+            # the boosted frame, even though the user-provided function corresponds
+            # to the lab frame. This is done (conceptually) in 2 steps:
+            # - the field is computed in the lab frame, by transforming
+            #   the current position/time of particles to the lab frame
+            # - the field is converted back to the boosted frame, by using
+            #   Lorentz transform formulas for E and B
 
-        # Compile the field_func for cpu and gpu
-        signature = [ float64( float64, float64, float64,
-                               float64, float64, float64, float64 ) ]
-        cpu_compiler = vectorize( signature, target='cpu', nopython=True )
-        self.cpu_func = cpu_compiler( func )
-        if cuda_installed:
-            # First create a device inline function
-            inline_func = cuda.jit( func, inline=True, device=True )
-            # Then create a CUDA kernel and compile it the usual way
-            def external_field_kernel( F, x, y, z, t, amplitude, length_scale ):
-                i = cuda.grid(1)
-    
-                if i < F.shape[0]:
-                    F[i] = inline_func( F[i], x[i], y[i], z[i], t, amplitude, length_scale )
+            # Modify user-input function, so as to evaluate field in the lab frame
+            if (gamma_boost is not None) and (gamma_boost != 1.):
+                beta_boost = np.sqrt(1. - 1./gamma_boost**2)
+                field_func = njit(field_func)
+                def func( F, x, y, z, t, amplitude, length_scale ):
+                    zlab = gamma_boost*(z + beta_boost*c*t)
+                    tlab = gamma_boost*(t + beta_boost*inv_c*z)
+                    return field_func(F, x, y, zlab, tlab, amplitude, length_scale)
+            else:
+                func = field_func
 
-            # To ensure that the kernel is compiled immediately and prevent scoping issues,
-            # it is specialized using an explicit signature
-            gpu_signature = void( float64[:], float64[:], float64[:],
-                               float64[:], float64, float64, float64 )
+            # Compile the field_func for cpu and gpu
+            signature = [ float64( float64, float64, float64,
+                                float64, float64, float64, float64 ) ]
+            cpu_compiler = vectorize( signature, target='cpu', nopython=True )
+            self.cpu_func = cpu_compiler( func )
+            if cuda_installed:
+                # First create a device inline function
+                inline_func = cuda.jit( func, inline=True, device=True )
+                # Then create a CUDA kernel and compile it the usual way
+                def external_field_kernel( F, x, y, z, t, amplitude, length_scale ):
+                    i = cuda.grid(1)
+        
+                    if i < F.shape[0]:
+                        F[i] = inline_func( F[i], x[i], y[i], z[i], t, amplitude, length_scale )
 
-            self.gpu_func = compile_cupy( external_field_kernel ).specialize( gpu_signature )
+                # To ensure that the kernel is compiled immediately and prevent scoping issues,
+                # it is specialized using an explicit signature
+                gpu_signature = void( float64[:], float64[:], float64[:],
+                                float64[:], float64, float64, float64 )
+
+                self.gpu_func = compile_cupy( external_field_kernel ).specialize( gpu_signature )
 
         # Convert the field back to the boosted frame
         if (gamma_boost is not None) and (gamma_boost != 1.):
@@ -155,23 +165,100 @@ class ExternalField( object ):
             gb = gamma_boost*beta_boost
             if fieldtype == 'Ex':
                 self.fieldtypes_and_amplitudes = (('Ex', g*amplitude),
-                                                  ('By', -gb*inv_c*amplitude))
+                                                ('By', -gb*inv_c*amplitude))
             elif fieldtype == 'Ey':
                 self.fieldtypes_and_amplitudes = (('Ey', g*amplitude),
-                                                  ('Bx', gb*inv_c*amplitude))
+                                                ('Bx', gb*inv_c*amplitude))
             elif fieldtype == 'Bx':
                 self.fieldtypes_and_amplitudes = (('Bx', g*amplitude),
-                                                  ('Ey', gb*c*amplitude))
+                                                ('Ey', gb*c*amplitude))
             elif fieldtype == 'By':
                 self.fieldtypes_and_amplitudes = (('By', g*amplitude),
-                                                  ('Ex', -gb*c*amplitude))
+                                                ('Ex', -gb*c*amplitude))
             elif (fieldtype == 'Ez') or (fieldtype == 'Bz'):
                 self.fieldtypes_and_amplitudes = ((fieldtype, amplitude),)
         else:
             self.fieldtypes_and_amplitudes = ((fieldtype, amplitude),)
 
 
-    def apply_expression( self, ptcl, t ):
+    @compile_cupy
+    def transform_cyl_to_cart_cuda( Fx, Fy, Fr, x, y ):
+        i = cuda.grid(1)
+        if i < Fx.shape[0]:
+            r = m.sqrt(x[i]**2 + y[i]**2)
+            if r > 0.:
+                Fx[i] += Fr[i] * x[i] / r 
+                Fy[i] += Fr[i] * y[i] / r
+
+
+    @compile_cupy
+    def r_grid_data_bilinear_interp( Fx, Fy, field, x, y, z, dr, dz, zmin, Nz, Nr ):
+        i = cuda.grid(1)
+        if i < Fx.shape[0]:
+            r = m.sqrt(x[i]**2 + y[i]**2)
+            if r > 0.:
+                ri_min = m.floor(r / dr)
+                zi_min = m.floor((z[i] - zmin)  / dz)
+
+                if zi_min >= Nz-1:
+                    zi_min = Nz-2
+                elif zi_min < 0:
+                    zi_min = 0
+                if ri_min >= Nr-1:
+                    ri_min = Nr-2
+
+                r1 = dr * ri_min
+                z1 = zmin + dz * zi_min
+                r2 = r1 + dr
+                z2 = z1 + dz
+                det = 1. / ((z2 - z1) * (r2 - r1))
+
+                fQ11 = field[int(zi_min + Nz * ri_min)]
+                fQ12 = field[int(zi_min + Nz * (ri_min + 1))]
+                fQ22 = field[int(zi_min + 1 + Nz * (ri_min + 1))]
+                fQ21 = field[int(zi_min + 1 + Nz * ri_min)]
+
+                b1 = fQ11 * (r2 - r) + fQ12 * (r - r1)
+                b2 = fQ21 * (r2 - r) + fQ22 * (r - r1)
+                Fr = det * ((z2 - z[i]) * b1 + (z[i] - z1) * b2)
+
+                Fx[i] += Fr * x[i] / r
+                Fy[i] += Fr * y[i] / r
+
+    
+    @compile_cupy
+    def z_grid_data_bilinear_interp( Fz, field, x, y, z, dr, dz, zmin, Nz, Nr ):
+        i = cuda.grid(1)
+        if i < Fz.shape[0]:
+            r = m.sqrt(x[i]**2 + y[i]**2)
+            ri_min = m.floor(r / dr)
+            zi_min = m.floor((z[i] - zmin) / dz)
+
+            if zi_min >= Nz-1:
+                zi_min = Nz-2
+            elif zi_min < 0:
+                zi_min = 0
+            if ri_min >= Nr-1:
+                ri_min = Nr-2
+
+            r1 = dr * ri_min
+            z1 = zmin + dz * zi_min
+            r2 = r1 + dr
+            z2 = z1 + dz
+            det = 1. / ((z2 - z1) * (r2 - r1))
+
+            fQ11 = field[int(zi_min + Nz * ri_min)]
+            fQ12 = field[int(zi_min + Nz * (ri_min + 1))]
+            fQ22 = field[int(zi_min + 1 + Nz * (ri_min + 1))]
+            fQ21 = field[int(zi_min + 1 + Nz * ri_min)]
+
+            b1 = fQ11 * (r2 - r) + fQ12 * (r - r1)
+            b2 = fQ21 * (r2 - r) + fQ22 * (r - r1)
+
+            Fz[i] += det * ((z1 - z[i]) * b1 + (z[i] - z1) * b2)
+            
+
+    def apply_expression( self, ptcl, t, comm ):
         """
         Apply the external field function to the particles
 
@@ -199,17 +286,45 @@ class ExternalField( object ):
 
                 # Loop over the different fields involved
                 for (fieldtype, amplitude) in self.fieldtypes_and_amplitudes:
+                    if fieldtype == 'Br':
+                        Bx = getattr( species, 'Bx' )
+                        By = getattr( species, 'By' )
+                        if type(self.field_func_d) is cupy.ndarray:
+                            dim_grid_1d, dim_block_1d = cuda_tpb_bpg_1d( species.Ntot )
+                            self.r_grid_data_bilinear_interp[dim_grid_1d, dim_block_1d]( 
+                                Bx, By, self.field_func_d,
+                                species.x, species.y, species.z,
+                                comm.dr, comm.dz, comm._zmin_global_domain,
+                                self.Nz, self.Nr )
+                        else:
+                            Br = cupy.zeros(species.Ntot)
+                            # Get the threads per block and the blocks per grid
+                            dim_grid_1d, dim_block_1d = cuda_tpb_bpg_1d( species.Ntot )
+                            # Call the GPU kernel
+                            self.gpu_func[dim_grid_1d, dim_block_1d](
+                                Br, species.x, species.y, species.z,
+                                t, amplitude, self.length_scale )
 
-                    field = getattr( species, fieldtype )
-
-                    if type( field ) is np.ndarray:
-                        # Call the CPU function
-                        self.cpu_func( field, species.x, species.y, species.z,
-                              t, amplitude, self.length_scale, out=field )
+                            self.transform_cyl_to_cart_cuda[dim_grid_1d, dim_block_1d](
+                                Bx, By, Br, species.x, species.y )
                     else:
-                        # Get the threads per block and the blocks per grid
-                        dim_grid_1d, dim_block_1d = cuda_tpb_bpg_1d( species.Ntot )
-                        # Call the GPU kernel
-                        self.gpu_func[dim_grid_1d, dim_block_1d](
-                            field, species.x, species.y, species.z,
-                            t, amplitude, self.length_scale )
+                        field = getattr( species, fieldtype )
+                        if type( self.field_func_d ) is cupy.ndarray:
+                            dim_grid_1d, dim_block_1d = cuda_tpb_bpg_1d( species.Ntot )
+                            self.z_grid_data_bilinear_interp[dim_grid_1d, dim_block_1d]( 
+                                field, self.field_func_d,
+                                species.x, species.y, species.z,
+                                comm.dr, comm.dz, comm._zmin_global_domain,
+                                self.Nz, self.Nr )
+                        else:
+                            if type( field ) is np.ndarray:
+                                # Call the CPU function
+                                self.cpu_func( field, species.x, species.y, species.z,
+                                    t, amplitude, self.length_scale, out=field )
+                            else:
+                                # Get the threads per block and the blocks per grid
+                                dim_grid_1d, dim_block_1d = cuda_tpb_bpg_1d( species.Ntot )
+                                # Call the GPU kernel
+                                self.gpu_func[dim_grid_1d, dim_block_1d](
+                                    field, species.x, species.y, species.z,
+                                    t, amplitude, self.length_scale )
