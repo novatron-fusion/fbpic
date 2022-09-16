@@ -17,7 +17,8 @@ class ExternalField( object ):
 
     def __init__(self, field_func, fieldtype, amplitude,
                  length_scale, species=None, gamma_boost=None,
-                 Nz=None, Nr=None ):
+                 Nz=None, Nr=None,
+                 dz=None, dr=None ):
         """
         Initialize an ExternalField object, so that the function
         `field_func` is called at each time step on the field `fieldtype`
@@ -107,8 +108,11 @@ class ExternalField( object ):
         # Register the arguments
         self.length_scale = length_scale
         self.species = species
+
         self.Nz = Nz
         self.Nr = Nr
+        self.dz = dz
+        self.dr = dr
         # Check that fieldtype is a correct field
         if (fieldtype in ['Ex', 'Ey', 'Ez', 'Bx', 'By', 'Bz', 'Br', 'Bt']) is False:
             raise ValueError("`fieldtype` must be one of Ex, Ey, Ez, Bx, By, Bz, Br, Bt")
@@ -190,49 +194,14 @@ class ExternalField( object ):
                 Fx[i] += Fr[i] * x[i] / r 
                 Fy[i] += Fr[i] * y[i] / r
 
-
-    @compile_cupy
-    def r_grid_data_bilinear_interp( Fx, Fy, field, x, y, z, dr, dz, zmin, Nz, Nr ):
-        i = cuda.grid(1)
-        if i < Fx.shape[0]:
-            r = m.sqrt(x[i]**2 + y[i]**2)
-            if r > 0.:
-                ri_min = m.floor(r / dr)
-                zi_min = m.floor((z[i] - zmin)  / dz)
-
-                if zi_min >= Nz-1:
-                    zi_min = Nz-2
-                elif zi_min < 0:
-                    zi_min = 0
-                if ri_min >= Nr-1:
-                    ri_min = Nr-2
-
-                r1 = dr * ri_min
-                z1 = zmin + dz * zi_min
-                r2 = r1 + dr
-                z2 = z1 + dz
-                det = 1. / ((z2 - z1) * (r2 - r1))
-
-                fQ11 = field[int(zi_min + Nz * ri_min)]
-                fQ12 = field[int(zi_min + Nz * (ri_min + 1))]
-                fQ22 = field[int(zi_min + 1 + Nz * (ri_min + 1))]
-                fQ21 = field[int(zi_min + 1 + Nz * ri_min)]
-
-                b1 = fQ11 * (r2 - r) + fQ12 * (r - r1)
-                b2 = fQ21 * (r2 - r) + fQ22 * (r - r1)
-                Fr = det * ((z2 - z[i]) * b1 + (z[i] - z1) * b2)
-
-                Fx[i] += Fr * x[i] / r
-                Fy[i] += Fr * y[i] / r
-
     
     @compile_cupy
-    def z_grid_data_bilinear_interp( Fz, field, x, y, z, dr, dz, zmin, Nz, Nr ):
+    def grid_data_bilinear_interp( F, field, x, y, z, dz, dr, Nz, Nr, zmin):
         i = cuda.grid(1)
-        if i < Fz.shape[0]:
+        if i < F.shape[0]:
             r = m.sqrt(x[i]**2 + y[i]**2)
+            zi_min = m.floor((z[i] - zmin)  / dz)
             ri_min = m.floor(r / dr)
-            zi_min = m.floor((z[i] - zmin) / dz)
 
             if zi_min >= Nz-1:
                 zi_min = Nz-2
@@ -240,22 +209,22 @@ class ExternalField( object ):
                 zi_min = 0
             if ri_min >= Nr-1:
                 ri_min = Nr-2
-
+            
             r1 = dr * ri_min
-            z1 = zmin + dz * zi_min
+            z1 = zmin + dz * zi_min 
             r2 = r1 + dr
             z2 = z1 + dz
             det = 1. / ((z2 - z1) * (r2 - r1))
 
-            fQ11 = field[int(zi_min + Nz * ri_min)]
-            fQ12 = field[int(zi_min + Nz * (ri_min + 1))]
-            fQ22 = field[int(zi_min + 1 + Nz * (ri_min + 1))]
-            fQ21 = field[int(zi_min + 1 + Nz * ri_min)]
+            fQ11 = field[int(zi_min + Nz*ri_min)]
+            fQ12 = field[int(zi_min + Nz*(ri_min + 1))]
+            fQ22 = field[int(zi_min + 1 + Nz*(ri_min + 1))]
+            fQ21 = field[int(zi_min + 1 + Nz*ri_min)]
 
             b1 = fQ11 * (r2 - r) + fQ12 * (r - r1)
             b2 = fQ21 * (r2 - r) + fQ22 * (r - r1)
 
-            Fz[i] += det * ((z1 - z[i]) * b1 + (z[i] - z1) * b2)
+            F[i] += det * ((z2 - z[i]) * b1 + (z[i] - z1) * b2)
             
 
     def apply_expression( self, ptcl, t, comm ):
@@ -283,21 +252,23 @@ class ExternalField( object ):
                 # in this species
                 if species.Ntot <= 0:
                     continue
-
+                
                 # Loop over the different fields involved
                 for (fieldtype, amplitude) in self.fieldtypes_and_amplitudes:
                     if fieldtype == 'Br':
                         Bx = getattr( species, 'Bx' )
                         By = getattr( species, 'By' )
+                        Br = cupy.zeros(species.Ntot)
                         if type(self.field_func_d) is cupy.ndarray:
                             dim_grid_1d, dim_block_1d = cuda_tpb_bpg_1d( species.Ntot )
-                            self.r_grid_data_bilinear_interp[dim_grid_1d, dim_block_1d]( 
-                                Bx, By, self.field_func_d,
+                            self.grid_data_bilinear_interp[dim_grid_1d, dim_block_1d]( 
+                                Br, self.field_func_d,
                                 species.x, species.y, species.z,
-                                comm.dr, comm.dz, comm._zmin_global_domain,
-                                self.Nz, self.Nr )
+                                self.dz, self.dr, self.Nz, self.Nr,
+                                comm._zmin_global_domain )
+                            self.transform_cyl_to_cart_cuda[dim_grid_1d, dim_block_1d](
+                                Bx, By, Br, species.x, species.y )
                         else:
-                            Br = cupy.zeros(species.Ntot)
                             # Get the threads per block and the blocks per grid
                             dim_grid_1d, dim_block_1d = cuda_tpb_bpg_1d( species.Ntot )
                             # Call the GPU kernel
@@ -311,11 +282,11 @@ class ExternalField( object ):
                         field = getattr( species, fieldtype )
                         if type( self.field_func_d ) is cupy.ndarray:
                             dim_grid_1d, dim_block_1d = cuda_tpb_bpg_1d( species.Ntot )
-                            self.z_grid_data_bilinear_interp[dim_grid_1d, dim_block_1d]( 
+                            self.grid_data_bilinear_interp[dim_grid_1d, dim_block_1d]( 
                                 field, self.field_func_d,
                                 species.x, species.y, species.z,
-                                comm.dr, comm.dz, comm._zmin_global_domain,
-                                self.Nz, self.Nr )
+                                self.dz, self.dr, self.Nz, self.Nr,
+                                comm._zmin_global_domain )
                         else:
                             if type( field ) is np.ndarray:
                                 # Call the CPU function
