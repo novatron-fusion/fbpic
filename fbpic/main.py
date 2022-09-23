@@ -347,6 +347,8 @@ class Simulation(object):
         self.laser_antennas = []
         # Initialize an empty list of mirrors
         self.mirrors = []
+        # Initialize an empty list of walls
+        self.walls = []
         # Initialize an empty list of collisions
         self.collisions = []
 
@@ -479,6 +481,15 @@ class Simulation(object):
                 if self.iteration % collision.period == 0 \
                     and self.iteration >= collision.start:
                     collision.handle_collisions( fld, dt )
+            """
+            # Increase density at user-defined intervals
+            if self.comm.injection['p'] is not None:
+                if self.iteration % self.comm.injection['p'] == 0 \
+                    and self.time <= self.comm.injection['t'] \
+                    and self.iteration > 0:
+                    for species in ptcl:
+                        species.w *= 1.05
+            """
 
             # Keep field arrays sorted throughout gathering+push
             for species in ptcl:
@@ -782,6 +793,10 @@ class Simulation(object):
         # - Set fields to 0 at the position of the mirrors
         for mirror in self.mirrors:
             mirror.set_fields_to_zero( fld.interp, self.comm, self.time )
+
+        # - Set fields to 0 at the position of the walls
+        for walls in self.walls:
+            walls.set_fields_to_zero( fld.interp )
 
         # - Update spectral space (and interpolation space if needed)
         if self.use_pml:

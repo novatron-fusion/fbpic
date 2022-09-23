@@ -28,8 +28,7 @@ def pairs_per_cell_cuda(N_batch, array_in1, array_in2, array_out, intra):
 				if array_in1[i] < 2: 
 					array_out[i] = 0
 				else:
-					array_out[i] = array_in1[i] / 2 \
-						if array_in1[i] % 2 else (array_in1[i] + 1) / 2
+					array_out[i] = int((array_in1[i] + 1) / 2)
 			else:
 				if array_in1[i] > array_in2[i]:
 					array_out[i] = array_in1[i]
@@ -179,7 +178,6 @@ def get_shuffled_idx_per_particle_cuda(N_batch, shuffled_idx, npart,
                 if value < p:
                     shuffled_idx[s+j] = value + start
                     j += 1
-                # Calculate the next value in the sequence.
                 value = (value*multiplier + offset) % modulus
             else:
                 shuffled_idx[s+j] = shuffled_idx[s+j-p]

@@ -112,8 +112,8 @@ class MCCollisions(object):
             npart2[0] = self.species2.prefix_sum[0]
             npart2[1:] = self.species2.prefix_sum[1:] - self.species2.prefix_sum[:-1]
 
-            assert self.species1.Ntot > 0
-            assert self.species2.Ntot > 0
+            #assert self.species1.Ntot > 0
+            #assert self.species2.Ntot > 0
             
             intra = True if self.species1 == self.species2 else False
 

@@ -6,6 +6,7 @@ This file is part of the Fourier-Bessel Particle-In-Cell code (FB-PIC)
 It defines the structure necessary to handle mpi buffers for the particles
 """
 import numpy as np
+import math as m
 import numba
 # Check if CUDA is available, then import CUDA functions
 from fbpic.utils.cuda import cuda_installed
@@ -204,6 +205,13 @@ def remove_particles_gpu(species, fld, n_guard, left_proc, right_proc):
         proc and right proc respectively, and where n_float and n_int
         are the number of float and integer quantities respectively
     """
+
+    # Get the threads per block and the blocks per grid
+    dim_grid_1d, dim_block_1d = cuda_tpb_bpg_1d( species.Ntot )
+    remove_particles_radially[dim_grid_1d, dim_block_1d](
+        fld.interp[0].rmax, fld.interp[0].zmax, species.x, species.y, species.z
+    )
+    species.sorted == False
     # Check if particles are sorted
     # (The particles are usually expected to be sorted from the previous
     # iteration at this point - except at the first iteration of `step`.)
@@ -282,9 +290,11 @@ def remove_particles_gpu(species, fld, n_guard, left_proc, right_proc):
         # and fill the sending buffers (if needed for MPI)
         setattr( attr_list[i_attr][0], attr_list[i_attr][1], stay_buffer)
         if left_proc is not None:
+            cupy.append(species.we, left_buffer)
             left_buffer.get( out=float_send_left[i_attr] )
         if right_proc is not None:
             right_buffer.get( out=float_send_right[i_attr] )
+            cupy.append(species.we, right_buffer)
 
     # Integer quantities:
     if n_int > 0:
@@ -659,3 +669,25 @@ if cuda_installed:
                 z[i] -= l_box
             while z[i] < zmin:
                 z[i] += l_box
+
+    @compile_cupy
+    def remove_particles_radially( rmax, zmax, x, y, z ):
+        """
+        Transfer particles that are at r > rmax
+        to z > zmax
+
+        Parameters
+        ----------
+        rmax : radial boundary
+
+        zmax : right z-boundary
+
+        x : 1darray of floats (in meters)
+            The position of the particles
+            (is modified by this function)
+        """
+        i = cuda.grid(1)
+        if i < x.shape[0]:
+            r = m.sqrt(x[i]**2 + y[i]**2)
+            if r >= rmax:
+                z[i] = zmax + 1.e-6

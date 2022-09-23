@@ -193,6 +193,7 @@ class Particles(object) :
         self.uz = uz
         self.inv_gamma = inv_gamma
         self.w = w
+        self.we = []
 
         # Initialize the fields array (at the positions of the particles)
         self.Ez = np.zeros( Ntot )
@@ -282,6 +283,7 @@ class Particles(object) :
             self.uz = cupy.asarray(self.uz)
             self.inv_gamma = cupy.asarray(self.inv_gamma)
             self.w = cupy.asarray(self.w)
+            self.we = cupy.asarray(self.we)
 
             # Copy arrays on the GPU for the field
             # gathering and the particle push
