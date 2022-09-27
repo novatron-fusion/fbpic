@@ -16,17 +16,17 @@ if cuda_installed:
 
 
 @cuda.jit( device=True, inline=True )
-def ray_casting(x, y, polygon):
+def ray_casting(z, r, polygon):
     n = len(polygon)
     count = 0
     for i in range(n-1):
-        x1 = polygon[i][0]
-        x2 = polygon[i+1][0]
-        y1 = polygon[i][1]
-        y2 = polygon[i+1][1]
+        z1 = polygon[i][0]
+        z2 = polygon[i+1][0]
+        r1 = polygon[i][1]
+        r2 = polygon[i+1][1]
 
-        if (y < y1) != (y < y2) \
-            and x < (x2-x1) * (y-y1) / (y2-y1) + x1:
+        if (r < r1) != (r < r2) \
+            and z < (z2-z1) * (r-r1) / (r2-r1) + z1:
             count += 1
         
     return(False if count % 2 == 0 else True)
@@ -56,7 +56,20 @@ class PCW(object):
         """
         
         self.wall_arr = cupy.asarray(wall_arr)
-        self.gamma_boost = gamma_boost
+        """
+        self.normal = cupy.array(len(wall_arr)-1)
+        # Calculate array of normal vectors
+        for i in range(len(self.wall_arr)-1):
+            z1 = self.wall_arr[i][0]
+            z2 = self.wall_arr[i+1][0]
+            r1 = self.wall_arr[i][1]
+            r2 = self.wall_arr[i+1][1]
+            
+            zlen = z2 - z1
+            rlen = r2 - r1
+
+            self.normal[i] = [rlen, -zlen] / (zlen**2 + rlen**2)**0.5
+        """
 
         if m == 'all':
             self.modes = None
@@ -93,7 +106,7 @@ class PCW(object):
             for field in fieldlist:
                 arr = getattr( grid, field )
                 dim_grid, dim_block = cuda_tpb_bpg_2d( 
-                    arr.shape[0], arr.shape[1] )
+                    grid.Nz, grid.Nr )
                 # Call kernel
                 self.pcw_boundary[ dim_grid, dim_block ](
                      arr, z_grid, r_grid, self.wall_arr)
@@ -107,5 +120,3 @@ class PCW(object):
             if not in_poly:
                 F[i, j] = 0.
 
-
-    

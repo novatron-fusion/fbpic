@@ -15,7 +15,8 @@ if cuda_installed:
     import cupy
     from fbpic.utils.cuda import cuda, cuda_tpb_bpg_1d, compile_cupy
 
-def remove_outside_particles(species, fld, n_guard, left_proc, right_proc):
+
+def remove_outside_particles(species, fld, walls, n_guard, left_proc, right_proc):
     """
     Remove the particles that are outside of the physical domain (i.e.
     in the guard cells). Store them in sending buffers, which are returned.
@@ -48,7 +49,7 @@ def remove_outside_particles(species, fld, n_guard, left_proc, right_proc):
     if species.use_cuda:
         # Remove outside particles on GPU, and copy buffers on CPU
         float_send_left, float_send_right, uint_send_left, uint_send_right = \
-            remove_particles_gpu( species, fld, n_guard, left_proc, right_proc )
+            remove_particles_gpu( species, fld, walls, n_guard, left_proc, right_proc )
     else:
         # Remove outside particles on the CPU
         float_send_left, float_send_right, uint_send_left, uint_send_right = \
@@ -176,7 +177,7 @@ def remove_particles_cpu(species, fld, n_guard, left_proc, right_proc):
     return(float_send_left, float_send_right, uint_send_left, uint_send_right)
 
 @catch_gpu_memory_error
-def remove_particles_gpu(species, fld, n_guard, left_proc, right_proc):
+def remove_particles_gpu(species, fld, walls, n_guard, left_proc, right_proc):
     """
     Remove the particles that are outside of the physical domain (i.e.
     in the guard cells). Store them in sending buffers, which are returned.
@@ -205,13 +206,13 @@ def remove_particles_gpu(species, fld, n_guard, left_proc, right_proc):
         proc and right proc respectively, and where n_float and n_int
         are the number of float and integer quantities respectively
     """
-
-    # Get the threads per block and the blocks per grid
-    dim_grid_1d, dim_block_1d = cuda_tpb_bpg_1d( species.Ntot )
-    remove_particles_radially[dim_grid_1d, dim_block_1d](
-        fld.interp[0].rmax, fld.interp[0].zmax, species.x, species.y, species.z
-    )
-    species.sorted == False
+    for wall in walls:
+        # Get the threads per block and the blocks per grid
+        dim_grid_1d, dim_block_1d = cuda_tpb_bpg_1d( species.Ntot )
+        remove_particles_radially[dim_grid_1d, dim_block_1d](
+            wall.wall_arr, fld.interp[0].zmax, species.x, species.y, species.z
+        )
+        species.sorted == False
     # Check if particles are sorted
     # (The particles are usually expected to be sorted from the previous
     # iteration at this point - except at the first iteration of `step`.)
@@ -572,6 +573,22 @@ def shift_particles_periodic_numba( z, zmin, zmax ):
 # -------------
 if cuda_installed:
 
+    @cuda.jit( device=True, inline=True )
+    def ray_casting(x, y, polygon):
+        n = len(polygon)
+        count = 0
+        for i in range(n-1):
+            x1 = polygon[i][0]
+            x2 = polygon[i+1][0]
+            y1 = polygon[i][1]
+            y2 = polygon[i+1][1]
+
+            if (y < y1) != (y < y2) \
+                and x < (x2-x1) * (y-y1) / (y2-y1) + x1:
+                count += 1
+            
+        return(False if count % 2 == 0 else True)
+
     @compile_cupy
     def split_particles_to_buffers( particle_array, left_buffer,
                     stay_buffer, right_buffer, i_min, i_max ):
@@ -671,23 +688,27 @@ if cuda_installed:
                 z[i] += l_box
 
     @compile_cupy
-    def remove_particles_radially( rmax, zmax, x, y, z ):
+    def remove_particles_radially( wall_arr, zmax, x, y, z ):
         """
-        Transfer particles that are at r > rmax
+        Transfer particles that are at outside of wall (polygon)
         to z > zmax
 
         Parameters
         ----------
-        rmax : radial boundary
+        wall_arr : array of points
+            user-defined polygon
 
         zmax : right z-boundary
 
-        x : 1darray of floats (in meters)
+        x, y, z : 1darray of floats (in meters)
             The position of the particles
             (is modified by this function)
         """
         i = cuda.grid(1)
         if i < x.shape[0]:
             r = m.sqrt(x[i]**2 + y[i]**2)
-            if r >= rmax:
-                z[i] = zmax + 1.e-6
+
+            in_poly = ray_casting(z[i], r, wall_arr)
+            if not in_poly:
+                z[i] = zmax + 0.01
+

@@ -27,7 +27,7 @@ class DHT(object):
     Class that allows to perform the Discrete Hankel Transform.
     """
 
-    def __init__(self, p, m, Nr, Nz, rmax, use_cuda=False ):
+    def __init__( self, p, m, Nr, Nz, rmax, use_cuda=False ):
         """
         Calculate the r (position) and nu (frequency) grid
         on which the transform will operate.

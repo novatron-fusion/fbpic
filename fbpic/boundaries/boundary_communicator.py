@@ -720,7 +720,7 @@ class BoundaryCommunicator(object):
             req_sr.Wait()
 
 
-    def exchange_particles( self, species, fld, time, iteration ):
+    def exchange_particles( self, species, fld, walls, time, iteration ):
         """
         Look for particles that are located outside of the physical boundaries
         and:
@@ -758,9 +758,9 @@ class BoundaryCommunicator(object):
         # Otherwise, remove particles that are outside of the local physical
         # subdomain and send them to neighboring processors
         else:
-            self.exchange_particles_aperiodic_subdomain( species, fld, time, iteration )
+            self.exchange_particles_aperiodic_subdomain( species, fld, walls, time, iteration )
 
-    def exchange_particles_aperiodic_subdomain(self, species, fld, time, iteration ):
+    def exchange_particles_aperiodic_subdomain(self, species, fld, walls, time, iteration ):
         """
         Look for particles that are located outside of the physical boundaries
         of the local subdomain and exchange them with the corresponding
@@ -788,7 +788,7 @@ class BoundaryCommunicator(object):
         # Remove out-of-domain particles from particle arrays (either on
         # CPU or GPU) and store them in sending buffers on the CPU
         float_send_left, float_send_right, uint_send_left, uint_send_right = \
-            remove_outside_particles( species, fld, self.n_guard,
+            remove_outside_particles( species, fld, walls, self.n_guard,
                                     self.left_proc, self.right_proc )
 
         # Send/receive the number of particles (need to be stored in arrays)
@@ -955,6 +955,7 @@ class BoundaryCommunicator(object):
         # can directly be multiplied with the fields at the left boundary of
         # the box - and needs to be inverted (damping_array[::-1]) before being
         # applied to the right boundary of the box.)
+
         damping_array = np.where( i_cell<n_guard+n_inject+nz_damp/2.,
             np.sin((i_cell-(n_guard+n_inject))*np.pi/(2*nz_damp/2.))**2, 1. )
         damping_array = np.where( i_cell<n_guard+n_inject, 0., damping_array )

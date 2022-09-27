@@ -452,7 +452,8 @@ class Simulation(object):
                 # are shifted by one box length, so they remain inside the box)
 
                 for species in self.ptcl:
-                    self.comm.exchange_particles(species, fld, 
+                    self.comm.exchange_particles(species, fld,
+                                                self.walls,
                                                 self.time, 
                                                 self.iteration)
                 for antenna in self.laser_antennas:
@@ -780,8 +781,10 @@ class Simulation(object):
         else:
             # Exchange/damp operation is purely along z; spectral fields
             # are updated by doing an iFFT/FFT instead of a full transform
-            fld.spect2partial_interp('E')
-            fld.spect2partial_interp('B')
+            fld.spect2interp('E')
+            fld.spect2interp('B')
+            #fld.spect2partial_interp('E')
+            #fld.spect2partial_interp('B')
 
         # - Exchange guard cells and damp fields
         self.comm.exchange_fields(fld.interp, 'E', 'replace')
@@ -808,8 +811,10 @@ class Simulation(object):
         else:
             # Exchange/damp operation is purely along z; spectral fields
             # are updated by doing an iFFT/FFT instead of a full transform
-            fld.partial_interp2spect('E')
-            fld.partial_interp2spect('B')
+            #fld.partial_interp2spect('E')
+            #fld.partial_interp2spect('B')
+            fld.interp2spect('E')
+            fld.interp2spect('B')
             # Get the corresponding fields in interpolation space
             fld.spect2interp('E')
             fld.spect2interp('B')
