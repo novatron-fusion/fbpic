@@ -7,6 +7,7 @@ It defines the structure necessary to implement the boundary exchanges.
 """
 import warnings
 import numpy as np
+import math as m
 from scipy.constants import c
 from fbpic.utils.mpi import comm, mpi_type_dict, \
     mpi_installed, gpudirect_enabled
@@ -21,9 +22,27 @@ from .particle_buffer_handling import remove_outside_particles, \
 from fbpic.utils.cuda import cuda_installed
 if cuda_installed:
     import cupy
-    from fbpic.utils.cuda import cuda, cuda_tpb_bpg_2d
+    from fbpic.utils.cuda import cuda, cuda_tpb_bpg_2d, cuda_tpb_bpg_1d,compile_cupy
     from .cuda_methods import cuda_damp_EB_left, cuda_damp_EB_right, \
                                 cuda_damp_EB_left_pml, cuda_damp_EB_right_pml
+                    
+
+if cuda_installed:
+    @cuda.jit( device=True, inline=True )
+    def ray_casting(x, y, polygon):
+        n = len(polygon)
+        count = 0
+        for i in range(n-1):
+            x1 = polygon[i][0]
+            x2 = polygon[i+1][0]
+            y1 = polygon[i][1]
+            y2 = polygon[i+1][1]
+
+            if (y < y1) != (y < y2) \
+                and x < (x2-x1) * (y-y1) / (y2-y1) + x1:
+                count += 1
+            
+        return(False if count % 2 == 0 else True)
 
 class BoundaryCommunicator(object):
     """
@@ -753,8 +772,49 @@ class BoundaryCommunicator(object):
         # For single-proc periodic simulation (periodic boundaries)
         # simply shift the particle positions by an integer number
         if self.n_guard == 0:
-            shift_particles_periodic_subdomain( species,
-                    fld.interp[0].zmin, fld.interp[0].zmax )
+            if species.particle_boundaries['zmin'] == 'open' \
+                or species.particle_boundaries['zmax'] == 'open':
+                attr_list = [ (species,'x'), (species,'y'), (species,'z'),
+                    (species,'ux'), (species,'uy'), (species,'uz'),
+                    (species,'inv_gamma'), (species,'w') ]
+                if species.ionizer is not None:
+                    attr_list.append( (species.ionizer,'w_times_level') )
+
+                for wall in walls:
+                    mask = cupy.ones(species.Ntot, dtype=bool)
+                    #mask[[0,2,4]] = False
+                    #result = arr[mask,...]
+                    # Get the threads per block and the blocks per grid
+                    dim_grid_1d, dim_block_1d = cuda_tpb_bpg_1d( species.Ntot )
+                    self.remove_particles_radially[dim_grid_1d, dim_block_1d](
+                        wall.wall_arr, mask, species.x, species.y, species.z
+                    )
+                    new_Ntot = int(cupy.count_nonzero(mask))
+
+                
+                # Allocate the sending buffers on the CPU
+                n_float = species.n_float_quantities
+                n_int = species.n_integer_quantities
+                stay_buffer = cupy.empty((new_Ntot,), dtype=np.float64)
+                # Loop through the float attributes
+                for i_attr in range(n_float):
+                    particle_array = getattr( attr_list[i_attr][0], attr_list[i_attr][1] )
+                    stay_buffer = particle_array[mask,...]
+                    setattr( attr_list[i_attr][0], attr_list[i_attr][1], stay_buffer)
+                species.sorted == False
+                species.Ntot = new_Ntot
+                float_send_left = np.empty((n_float, 0), dtype=np.float64)
+                uint_send_left = np.empty((n_int, 0), dtype=np.uint64)
+                float_send_right = np.empty((n_float, 0), dtype=np.float64)
+                uint_send_right = np.empty((n_int, 0), dtype=np.uint64)
+                # Add the exchanged buffers to the particles on the CPU or GPU
+                # and resize the auxiliary field-on-particle and sorting arrays
+                add_buffers_to_particles( species, float_send_left, float_send_right,
+                                            uint_send_left, uint_send_right )
+  
+            else:
+                shift_particles_periodic_subdomain( species,
+                        fld.interp[0].zmin, fld.interp[0].zmax )
         # Otherwise, remove particles that are outside of the local physical
         # subdomain and send them to neighboring processors
         else:

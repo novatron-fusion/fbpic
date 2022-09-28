@@ -798,8 +798,8 @@ class Simulation(object):
             mirror.set_fields_to_zero( fld.interp, self.comm, self.time )
 
         # - Set fields to 0 at the position of the walls
-        for walls in self.walls:
-            walls.set_fields_to_zero( fld.interp )
+        #for walls in self.walls:
+        #    walls.set_fields_to_zero( fld.interp )
 
         # - Update spectral space (and interpolation space if needed)
         if self.use_pml:
