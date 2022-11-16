@@ -186,13 +186,13 @@ class ExternalField( object ):
 
 
     @compile_cupy
-    def transform_cyl_to_cart_cuda( Fx, Fy, Fr, x, y ):
+    def transform_cyl_to_cart_cuda( Fx, Fy, Fr, Ft, x, y ):
         i = cuda.grid(1)
         if i < Fx.shape[0]:
             r = m.sqrt(x[i]**2 + y[i]**2)
             if r > 0.:
-                Fx[i] += Fr[i] * x[i] / r 
-                Fy[i] += Fr[i] * y[i] / r
+                Fx[i] += Fr[i] * x[i] / r - Ft[i] * y[i] / r
+                Fy[i] += Fr[i] * y[i] / r + Ft[i] * x[i] / r
 
     
     @compile_cupy
@@ -259,6 +259,7 @@ class ExternalField( object ):
                         Bx = getattr( species, 'Bx' )
                         By = getattr( species, 'By' )
                         Br = cupy.zeros(species.Ntot)
+                        Bt = cupy.zeros(species.Ntot)
                         if type(self.field_func_d) is cupy.ndarray:
                             dim_grid_1d, dim_block_1d = cuda_tpb_bpg_1d( species.Ntot )
                             self.grid_data_bilinear_interp[dim_grid_1d, dim_block_1d]( 
@@ -266,8 +267,13 @@ class ExternalField( object ):
                                 species.x, species.y, species.z,
                                 self.dz, self.dr, self.Nz, self.Nr,
                                 comm._zmin_global_domain )
+                            self.grid_data_bilinear_interp[dim_grid_1d, dim_block_1d]( 
+                                Bt, self.field_func_d,
+                                species.x, species.y, species.z,
+                                self.dz, self.dr, self.Nz, self.Nr,
+                                comm._zmin_global_domain )
                             self.transform_cyl_to_cart_cuda[dim_grid_1d, dim_block_1d](
-                                Bx, By, Br, species.x, species.y )
+                                Bx, By, Br, Bt, species.x, species.y )
                         else:
                             # Get the threads per block and the blocks per grid
                             dim_grid_1d, dim_block_1d = cuda_tpb_bpg_1d( species.Ntot )
@@ -275,9 +281,16 @@ class ExternalField( object ):
                             self.gpu_func[dim_grid_1d, dim_block_1d](
                                 Br, species.x, species.y, species.z,
                                 t, amplitude, self.length_scale )
+                            
+                            # Call the GPU kernel
+                            self.gpu_func[dim_grid_1d, dim_block_1d](
+                                Bt, species.x, species.y, species.z,
+                                t, amplitude, self.length_scale )
 
                             self.transform_cyl_to_cart_cuda[dim_grid_1d, dim_block_1d](
-                                Bx, By, Br, species.x, species.y )
+                                Bx, By, Br, Bt, species.x, species.y )
+                    elif fieldtype == 'Bt':
+                        continue
                     else:
                         field = getattr( species, fieldtype )
                         if type( self.field_func_d ) is cupy.ndarray:

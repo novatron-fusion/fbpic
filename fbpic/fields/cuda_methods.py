@@ -9,6 +9,23 @@ from numba import cuda
 from fbpic.utils.cuda import compile_cupy
 from scipy.constants import c, epsilon_0, mu_0
 c2 = c**2
+eta_inv = 1.e-8
+
+@cuda.jit( device=True, inline=True )
+def ray_casting(z, r, polygon):
+    n = len(polygon)
+    count = 0
+    for i in range(n-1):
+        z1 = polygon[i][0]
+        z2 = polygon[i+1][0]
+        r1 = polygon[i][1]
+        r2 = polygon[i+1][1]
+
+        if (r < r1) != (r < r2) \
+            and z < (z2-z1) * (r-r1) / (r2-r1) + z1:
+            count += 1
+        
+    return(False if count % 2 == 0 else True)
 
 # ------------------
 # Erasing functions
@@ -464,7 +481,8 @@ def cuda_push_rho( rho_prev, rho_next, Nz, Nr ) :
         rho_next[iz, ir] = 0.
 
 @compile_cupy
-def cuda_filter_scalar( field, Nz, Nr, filter_array_z, filter_array_r ) :
+def cuda_filter_scalar( field, Nz, Nr, filter_array_z, filter_array_r ):
+#                        z, r, wall_array, segment ) :
     """
     Multiply the input field by the filter_array
 
@@ -485,12 +503,22 @@ def cuda_filter_scalar( field, Nz, Nr, filter_array_z, filter_array_r ) :
 
     # Filter the field
     if (iz < Nz) and (ir < Nr) :
-
         field[iz, ir] = filter_array_z[iz]*filter_array_r[ir]*field[iz, ir]
+        """
+        in_poly = ray_casting(z[iz], r[ir], wall_array)
+        if in_poly:
+            n = len(wall_array)
+            for k in range(n-1):
+                in_segment = ray_casting(z[iz], r[ir], segment[k])
+                if in_segment:
+                    field[iz, ir] = filter_array_z[iz]*filter_array_r[ir]*field[iz, ir]
+                    break
+        """
 
 @compile_cupy
 def cuda_filter_vector( fieldr, fieldt, fieldz, Nz, Nr,
                         filter_array_z, filter_array_r ):
+ #                       z, r, wall_array, segment ):
     """
     Multiply the input field by the filter_array
 
@@ -510,8 +538,19 @@ def cuda_filter_vector( fieldr, fieldt, fieldz, Nz, Nr,
     iz, ir = cuda.grid(2)
 
     # Filter the field
-    if (iz < Nz) and (ir < Nr) :
-
+    if (iz < Nz) and (ir < Nr):
         fieldr[iz, ir] = filter_array_z[iz]*filter_array_r[ir]*fieldr[iz, ir]
         fieldt[iz, ir] = filter_array_z[iz]*filter_array_r[ir]*fieldt[iz, ir]
         fieldz[iz, ir] = filter_array_z[iz]*filter_array_r[ir]*fieldz[iz, ir]
+        """
+        in_poly = ray_casting(z[iz], r[ir], wall_array)
+        if in_poly:
+            n = len(wall_array)
+            for k in range(n-1):
+                in_segment = ray_casting(z[iz], r[ir], segment[k])
+                if in_segment:
+                    fieldr[iz, ir] = filter_array_z[iz]*filter_array_r[ir]*fieldr[iz, ir]
+                    fieldt[iz, ir] = filter_array_z[iz]*filter_array_r[ir]*fieldt[iz, ir]
+                    fieldz[iz, ir] = filter_array_z[iz]*filter_array_r[ir]*fieldz[iz, ir]
+                    break
+        """

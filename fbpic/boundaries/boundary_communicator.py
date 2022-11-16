@@ -769,52 +769,50 @@ class BoundaryCommunicator(object):
             from a density profile: in the case the time is used in
             order to infer how much the plasma has moved)
         """
+
+        if species.particle_boundaries['zmin'] == 'open' \
+            or species.particle_boundaries['zmax'] == 'open':
+            attr_list = [ (species,'x'), (species,'y'), (species,'z'),
+                (species,'ux'), (species,'uy'), (species,'uz'),
+                (species,'inv_gamma'), (species,'w') ]
+            if species.ionizer is not None:
+                attr_list.append( (species.ionizer,'w_times_level') )
+
+            for wall in walls:
+                mask = cupy.ones(species.Ntot, dtype=bool)
+                # Get the threads per block and the blocks per grid
+                dim_grid_1d, dim_block_1d = cuda_tpb_bpg_1d( species.Ntot )
+                self.remove_particles_outside_boundary[dim_grid_1d, dim_block_1d](
+                    wall.wall_arr, mask, species.x, species.y, species.z
+                )
+                new_Ntot = int(cupy.count_nonzero(mask))
+
+            
+            # Allocate the sending buffers on the CPU
+            n_float = species.n_float_quantities
+            n_int = species.n_integer_quantities
+            stay_buffer = cupy.empty((new_Ntot,), dtype=np.float64)
+            # Loop through the float attributes
+            for i_attr in range(n_float):
+                particle_array = getattr( attr_list[i_attr][0], attr_list[i_attr][1] )
+                stay_buffer = particle_array[mask,...]
+                setattr( attr_list[i_attr][0], attr_list[i_attr][1], stay_buffer)
+            species.sorted == False
+            species.Ntot = new_Ntot
+            float_send_left = np.empty((n_float, 0), dtype=np.float64)
+            uint_send_left = np.empty((n_int, 0), dtype=np.uint64)
+            float_send_right = np.empty((n_float, 0), dtype=np.float64)
+            uint_send_right = np.empty((n_int, 0), dtype=np.uint64)
+            # Add the exchanged buffers to the particles on the CPU or GPU
+            # and resize the auxiliary field-on-particle and sorting arrays
+            add_buffers_to_particles( species, float_send_left, float_send_right,
+                                        uint_send_left, uint_send_right )
+
         # For single-proc periodic simulation (periodic boundaries)
         # simply shift the particle positions by an integer number
         if self.n_guard == 0:
-            if species.particle_boundaries['zmin'] == 'open' \
-                or species.particle_boundaries['zmax'] == 'open':
-                attr_list = [ (species,'x'), (species,'y'), (species,'z'),
-                    (species,'ux'), (species,'uy'), (species,'uz'),
-                    (species,'inv_gamma'), (species,'w') ]
-                if species.ionizer is not None:
-                    attr_list.append( (species.ionizer,'w_times_level') )
-
-                for wall in walls:
-                    mask = cupy.ones(species.Ntot, dtype=bool)
-                    #mask[[0,2,4]] = False
-                    #result = arr[mask,...]
-                    # Get the threads per block and the blocks per grid
-                    dim_grid_1d, dim_block_1d = cuda_tpb_bpg_1d( species.Ntot )
-                    self.remove_particles_radially[dim_grid_1d, dim_block_1d](
-                        wall.wall_arr, mask, species.x, species.y, species.z
-                    )
-                    new_Ntot = int(cupy.count_nonzero(mask))
-
-                
-                # Allocate the sending buffers on the CPU
-                n_float = species.n_float_quantities
-                n_int = species.n_integer_quantities
-                stay_buffer = cupy.empty((new_Ntot,), dtype=np.float64)
-                # Loop through the float attributes
-                for i_attr in range(n_float):
-                    particle_array = getattr( attr_list[i_attr][0], attr_list[i_attr][1] )
-                    stay_buffer = particle_array[mask,...]
-                    setattr( attr_list[i_attr][0], attr_list[i_attr][1], stay_buffer)
-                species.sorted == False
-                species.Ntot = new_Ntot
-                float_send_left = np.empty((n_float, 0), dtype=np.float64)
-                uint_send_left = np.empty((n_int, 0), dtype=np.uint64)
-                float_send_right = np.empty((n_float, 0), dtype=np.float64)
-                uint_send_right = np.empty((n_int, 0), dtype=np.uint64)
-                # Add the exchanged buffers to the particles on the CPU or GPU
-                # and resize the auxiliary field-on-particle and sorting arrays
-                add_buffers_to_particles( species, float_send_left, float_send_right,
-                                            uint_send_left, uint_send_right )
-  
-            else:
-                shift_particles_periodic_subdomain( species,
-                        fld.interp[0].zmin, fld.interp[0].zmax )
+            shift_particles_periodic_subdomain( species,
+                    fld.interp[0].zmin, fld.interp[0].zmax )
         # Otherwise, remove particles that are outside of the local physical
         # subdomain and send them to neighboring processors
         else:

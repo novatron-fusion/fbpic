@@ -210,7 +210,7 @@ def remove_particles_gpu(species, fld, walls, n_guard, left_proc, right_proc):
         # Get the threads per block and the blocks per grid
         dim_grid_1d, dim_block_1d = cuda_tpb_bpg_1d( species.Ntot )
         remove_particles_radially[dim_grid_1d, dim_block_1d](
-            wall.wall_arr, fld.interp[0].zmax, species.x, species.y, species.z
+            wall.wall_arr,fld.interp[0].zmin, fld.interp[0].zmax, species.x, species.y, species.z
         )
         species.sorted == False
     # Check if particles are sorted
@@ -688,9 +688,9 @@ if cuda_installed:
                 z[i] += l_box
 
     @compile_cupy
-    def remove_particles_radially( wall_arr, zmax, x, y, z ):
+    def remove_particles_radially( wall_arr, zmin, zmax, x, y, z ):
         """
-        Transfer particles that are at outside of wall (polygon)
+        Transfer particles that are outside of wall (polygon)
         to z > zmax
 
         Parameters
@@ -710,5 +710,8 @@ if cuda_installed:
 
             in_poly = ray_casting(z[i], r, wall_arr)
             if not in_poly:
-                z[i] = zmax + 0.01
+                if z[i] < 0:
+                    z[i] = zmin - 1.e-6
+                else:
+                    z[i] = zmax + 1.e-6
 

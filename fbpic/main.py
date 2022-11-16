@@ -482,6 +482,7 @@ class Simulation(object):
                 if self.iteration % collision.period == 0 \
                     and self.iteration >= collision.start:
                     collision.handle_collisions( fld, dt )
+
             """
             # Increase density at user-defined intervals
             if self.comm.injection['p'] is not None:
@@ -581,6 +582,9 @@ class Simulation(object):
                     fld.partial_interp2spect('J')
                 fld.exchanged_source['J'] = True
 
+            for walls in self.walls:
+                walls.construct_penalty_term( fld.interp, self.comm,  self.iteration )
+                
             # Push the fields E and B on the spectral grid to t = (n+1) dt
             fld.push( use_true_rho, check_exchanges=(self.comm.size > 1) )
             if correct_divE:
@@ -599,6 +603,8 @@ class Simulation(object):
             # - Update the fields in interpolation space
             #  (needed for the field gathering at the next iteration)
             self.exchange_and_damp_EB()
+            #if correct_divE:
+            #    fld.correct_divE()
 
             # Increment the global time and iteration
             self.time += dt
@@ -797,9 +803,9 @@ class Simulation(object):
         for mirror in self.mirrors:
             mirror.set_fields_to_zero( fld.interp, self.comm, self.time )
 
-        # - Set fields to 0 at the position of the walls
-        #for walls in self.walls:
-        #    walls.set_fields_to_zero( fld.interp )
+        # - PEC boundary condition
+        for walls in self.walls:
+            walls.reflect_fields_at_pec( fld.interp, self.comm, self.iteration )
 
         # - Update spectral space (and interpolation space if needed)
         if self.use_pml:
@@ -818,6 +824,41 @@ class Simulation(object):
             # Get the corresponding fields in interpolation space
             fld.spect2interp('E')
             fld.spect2interp('B')
+
+    def fix_current_at_domain_edge(self):
+        """
+        Handle boundaries for the current J
+        """
+        # Shortcut
+        fld = self.fld
+
+        # - Get fields in interpolation space (or partial interpolation space)
+        #   to prepare for damp/exchange
+        if self.use_pml:
+            # Exchange/damp operation in z and r ; do full transform
+            fld.spect2interp('J')
+        else:
+            # Exchange/damp operation is purely along z; spectral fields
+            # are updated by doing an iFFT/FFT instead of a full transform
+            fld.spect2partial_interp('J')
+
+        # - Exchange guard cells and damp fields
+        self.comm.exchange_fields(fld.interp, 'J', 'replace')
+
+        # - PEC boundary condition
+        for walls in self.walls:
+            walls.set_current_to_zero( fld.interp, self.comm )
+
+        # - Update spectral space (and interpolation space if needed)
+        if self.use_pml:
+            # Exchange/damp operation in z and r ; do full transform back
+            fld.interp2spect('J')
+        else:
+            # Exchange/damp operation is purely along z; spectral fields
+            # are updated by doing an iFFT/FFT instead of a full transform
+            fld.partial_interp2spect('J')
+            # Get the corresponding fields in interpolation space
+            fld.spect2interp('J')
 
 
     def shift_galilean_boundaries(self, dt):
