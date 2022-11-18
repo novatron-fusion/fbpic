@@ -291,11 +291,9 @@ def remove_particles_gpu(species, fld, walls, n_guard, left_proc, right_proc):
         # and fill the sending buffers (if needed for MPI)
         setattr( attr_list[i_attr][0], attr_list[i_attr][1], stay_buffer)
         if left_proc is not None:
-            cupy.append(species.we, left_buffer)
             left_buffer.get( out=float_send_left[i_attr] )
         if right_proc is not None:
             right_buffer.get( out=float_send_right[i_attr] )
-            cupy.append(species.we, right_buffer)
 
     # Integer quantities:
     if n_int > 0:
@@ -316,7 +314,7 @@ def remove_particles_gpu(species, fld, walls, n_guard, left_proc, right_proc):
             left_buffer, stay_buffer, right_buffer, i_min, i_max)
         # Assign the stay_buffer to the initial particle data array
         # and fill the sending buffers (if needed for MPI)
-        setattr( attr_list[i_attr][0], attr_list[i_attr][1], stay_buffer)
+        setattr( attr_list[i_attr][0], attr_list[i_attr][1], stay_buffer )
         if left_proc is not None:
             left_buffer.get( out=uint_send_left[i_attr] )
         if right_proc is not None:

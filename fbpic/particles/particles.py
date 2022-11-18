@@ -179,6 +179,7 @@ class Particles(object) :
 
         # Register the properties of the particles
         # (Necessary for the pusher, and when adding more particles later, )
+        self.initNtot = Ntot
         self.Ntot = Ntot
         self.q = q
         self.m = m
@@ -193,7 +194,6 @@ class Particles(object) :
         self.uz = uz
         self.inv_gamma = inv_gamma
         self.w = w
-        self.we = []
 
         # Initialize the fields array (at the positions of the particles)
         self.Ez = np.zeros( Ntot )
@@ -202,6 +202,16 @@ class Particles(object) :
         self.Bz = np.zeros( Ntot )
         self.Bx = np.zeros( Ntot )
         self.By = np.zeros( Ntot )
+
+        # Initialize the removed particle arrays
+        self.save_escaped = None
+        self.x_e = []
+        self.y_e = []
+        self.z_e = []
+        self.ux_e = []
+        self.uy_e = []
+        self.uz_e = []
+        self.w_e = []
 
         # The particle injector stores information that is useful in order
         # continuously inject particles in the simulation, with moving window
@@ -273,8 +283,8 @@ class Particles(object) :
         Particle arrays of self now point to the GPU arrays.
         """
         if self.use_cuda:
-            # Send positions, velocities, inverse gamma and weights
-            # to the GPU (CUDA)
+            # Send positions, velocities, inverse gamma,
+            # and weights to the GPU (CUDA)
             self.x = cupy.asarray(self.x)
             self.y = cupy.asarray(self.y)
             self.z = cupy.asarray(self.z)
@@ -283,7 +293,7 @@ class Particles(object) :
             self.uz = cupy.asarray(self.uz)
             self.inv_gamma = cupy.asarray(self.inv_gamma)
             self.w = cupy.asarray(self.w)
-            self.we = cupy.asarray(self.we)
+            
 
             # Copy arrays on the GPU for the field
             # gathering and the particle push
@@ -293,6 +303,16 @@ class Particles(object) :
             self.Bx = cupy.asarray(self.Bx)
             self.By = cupy.asarray(self.By)
             self.Bz = cupy.asarray(self.Bz)
+
+            # Copy the removed particles positions,
+            # velocities, and weights to the GPU (CUDA)
+            self.x_e = cupy.asarray(self.x_e)
+            self.y_e = cupy.asarray(self.y_e)
+            self.z_e = cupy.asarray(self.z_e)
+            self.ux_e = cupy.asarray(self.ux_e)
+            self.uy_e = cupy.asarray(self.uy_e)
+            self.uz_e = cupy.asarray(self.uz_e)
+            self.w_e = cupy.asarray(self.w_e)
 
             # Copy sorting buffers on the GPU
             self.sorting_buffer = cupy.asarray(self.sorting_buffer)
@@ -334,6 +354,16 @@ class Particles(object) :
             self.Bx = self.Bx.get()
             self.By = self.By.get()
             self.Bz = self.Bz.get()
+
+            # Copy the removed particles positions,
+            # velocities, and weights to the GPU (CUDA)
+            self.x_e = self.x_e.get()
+            self.y_e = self.y_e.get()
+            self.z_e = self.z_e.get()
+            self.ux_e = self.ux_e.get()
+            self.uy_e = self.uy_e.get()
+            self.uz_e = self.uz_e.get()
+            self.w_e = self.w_e.get()
 
             # Copy arrays on the CPU
             # that represent the sorting arrays

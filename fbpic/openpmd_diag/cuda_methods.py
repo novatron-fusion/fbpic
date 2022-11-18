@@ -10,7 +10,7 @@ from fbpic.utils.cuda import cupy, cuda, cuda_tpb_bpg_1d, compile_cupy
 
 def extract_slice_from_gpu( pref_sum_curr, N_area, species ):
     """
-    Extract the particles which have which have index between pref_sum_curr
+    Extract the particles which have index between pref_sum_curr
     and pref_sum_curr + N_area, and return them in dictionaries.
 
     Parameters
