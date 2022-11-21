@@ -311,6 +311,7 @@ class ParticleDiagnostic(OpenPMDDiagnostic) :
                     n_rank = None
                     Ntot = n
                 # Write the datasets for each particle datatype
+                print('write escaped particles',Ntot,select_array)
                 self.write_escaped_particles( species_grp, species, n_rank,
                     Ntot, select_array, self.escaped_array_quantities_dict[species_name] )
 
@@ -637,8 +638,7 @@ class ParticleDiagnostic(OpenPMDDiagnostic) :
             quantity_one_proc = 1.0/getattr( species, "inv_gamma" )
         else:
             quantity_one_proc = getattr( species, quantity )
-        print(quantity_one_proc)
-        print(select_array)
+
         # Apply the selection
         quantity_one_proc = quantity_one_proc[ select_array ]
 
