@@ -129,10 +129,11 @@ class MCCollisions(object):
                                 d_invvol, Nz)
 
             temperature1 = cupy.empty( N_cells, dtype=np.float64)
-            # Calculate temperature of species 1 in each cell
-            temperature_per_cell_cuda[ bpg, tpg ](N_cells, temperature1, npart1,
-                                self.species1.prefix_sum, self.species1.m,
-                                ux1, uy1, uz1, self.species1.inv_gamma)
+            if self.coulomb_log <= 0:
+                # Calculate temperature of species 1 in each cell
+                temperature_per_cell_cuda[ bpg, tpg ](N_cells, temperature1, npart1,
+                                    self.species1.prefix_sum, self.species1.m,
+                                    ux1, uy1, uz1, self.species1.inv_gamma)
 
             
             theta1 = cupy.zeros(self.species1.Ntot, dtype=np.float64)
@@ -161,10 +162,11 @@ class MCCollisions(object):
                                     d_invvol, Nz)
 
                 temperature2 = cupy.empty( N_cells, dtype=np.float64)
-                # Calculate temperature of species 2 in each cell
-                temperature_per_cell_cuda[ bpg, tpg ](N_cells, temperature2, npart2,
-                                    self.species2.prefix_sum, self.species2.m,
-                                    ux2, uy2, uz2, self.species2.inv_gamma)
+                if self.coulomb_log <= 0:
+                    # Calculate temperature of species 2 in each cell
+                    temperature_per_cell_cuda[ bpg, tpg ](N_cells, temperature2, npart2,
+                                        self.species2.prefix_sum, self.species2.m,
+                                        ux2, uy2, uz2, self.species2.inv_gamma)
                 
                 theta2 = cupy.zeros(self.species2.Ntot, dtype=np.float64)
                 bpgs, tpgs = cuda_tpb_bpg_1d( self.species2.Ntot )

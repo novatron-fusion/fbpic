@@ -311,7 +311,6 @@ class ParticleDiagnostic(OpenPMDDiagnostic) :
                     n_rank = None
                     Ntot = n
                 # Write the datasets for each particle datatype
-                print('write escaped particles',Ntot,select_array)
                 self.write_escaped_particles( species_grp, species, n_rank,
                     Ntot, select_array, self.escaped_array_quantities_dict[species_name] )
 

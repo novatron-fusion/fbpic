@@ -267,7 +267,7 @@ def remove_particles_gpu(species, fld, walls, n_guard, left_proc, right_proc):
     # Build list of float attributes to copy
     attr_list = [ (species,'x'), (species,'y'), (species,'z'),
                     (species,'ux'), (species,'uy'), (species,'uz'),
-                    (species,'inv_gamma'), (species,'w') ]
+                    (species,'w'), (species,'inv_gamma') ]
     if species.ionizer is not None:
         attr_list.append( (species.ionizer,'w_times_level') )
     # Loop through the float attributes
@@ -292,8 +292,14 @@ def remove_particles_gpu(species, fld, walls, n_guard, left_proc, right_proc):
         setattr( attr_list[i_attr][0], attr_list[i_attr][1], stay_buffer)
         if left_proc is not None:
             left_buffer.get( out=float_send_left[i_attr] )
+            if N_send_l > 0 and i_attr < 7:
+                species.__dict__[attr_list[i_attr][1]+'_e'] = \
+                    cupy.append(species.__dict__[attr_list[i_attr][1]+'_e'], left_buffer)
         if right_proc is not None:
             right_buffer.get( out=float_send_right[i_attr] )
+            if N_send_r > 0 and i_attr < 7:
+                species.__dict__[attr_list[i_attr][1]+'_e'] = \
+                    cupy.append(species.__dict__[attr_list[i_attr][1]+'_e'], right_buffer)
 
     # Integer quantities:
     if n_int > 0:

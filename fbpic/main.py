@@ -345,8 +345,6 @@ class Simulation(object):
         self.checkpoints = []
         # Initialize an empty list of laser antennas
         self.laser_antennas = []
-        # Initialize an empty list of mirrors
-        self.mirrors = []
         # Initialize an empty list of walls
         self.walls = []
         # Initialize an empty list of collisions
@@ -583,7 +581,7 @@ class Simulation(object):
                 fld.exchanged_source['J'] = True
 
             for walls in self.walls:
-                walls.construct_penalty_term( fld.interp, self.comm,  self.iteration )
+                walls.save_fields( fld.interp, self.comm,  self.iteration )
                 
             # Push the fields E and B on the spectral grid to t = (n+1) dt
             fld.push( use_true_rho, check_exchanges=(self.comm.size > 1) )
@@ -603,8 +601,6 @@ class Simulation(object):
             # - Update the fields in interpolation space
             #  (needed for the field gathering at the next iteration)
             self.exchange_and_damp_EB()
-            #if correct_divE:
-            #    fld.correct_divE()
 
             # Increment the global time and iteration
             self.time += dt
@@ -795,17 +791,14 @@ class Simulation(object):
         # - Exchange guard cells and damp fields
         self.comm.exchange_fields(fld.interp, 'E', 'replace')
         self.comm.exchange_fields(fld.interp, 'B', 'replace')
+        self.comm.exchange_fields(fld.interp, 'J', 'replace')
         self.comm.damp_EB_open_boundary( fld.interp ) # Damp along z
         if self.use_pml:
             self.comm.damp_pml_EB( fld.interp ) # Damp in radial PML
-
-        # - Set fields to 0 at the position of the mirrors
-        for mirror in self.mirrors:
-            mirror.set_fields_to_zero( fld.interp, self.comm, self.time )
-
-        # - PEC boundary condition
+        
+        # - Wall boundary condition
         for walls in self.walls:
-            walls.reflect_fields_at_pec( fld.interp, self.comm, self.iteration )
+            walls.set_boundaryconditions( fld.interp, self.comm, self.time, self.iteration )
 
         # - Update spectral space (and interpolation space if needed)
         if self.use_pml:
