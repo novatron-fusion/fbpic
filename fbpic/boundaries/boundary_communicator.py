@@ -312,8 +312,8 @@ class BoundaryCommunicator(object):
             # Maximum number of timesteps before a particle can reach the end
             # of the half of guard region including the maximum number of cells
             # (+/-3) it can affect with a "cubic" particle shape_factor.
-            # (Particles are only allowed to reside in half of the guard
-            # region as this is the stencil reach of the current correction)
+            # (Particles are only allowed to reside in half of the guard region 
+            # as this is the stencil reach of the current correction)
             self.exchange_period = int(((self.n_guard/2)-3)/cells_per_step)
             # Set exchange_period to 1 in the case of single-proc
             # and periodic boundary conditions.
@@ -787,7 +787,6 @@ class BoundaryCommunicator(object):
                 )
                 new_Ntot = int(cupy.count_nonzero(mask))
                 nr_remove = species.Ntot - new_Ntot
-
             
                 # Allocate the sending buffers on the CPU
                 n_float = species.n_float_quantities
@@ -814,8 +813,6 @@ class BoundaryCommunicator(object):
                 # and resize the auxiliary field-on-particle and sorting arrays
                 add_buffers_to_particles( species, float_send_left, float_send_right,
                                             uint_send_left, uint_send_right )
-            
-
 
         # For single-proc periodic simulation (periodic boundaries)
         # simply shift the particle positions by an integer number

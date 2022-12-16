@@ -300,6 +300,7 @@ def remove_particles_gpu(species, fld, walls, n_guard, left_proc, right_proc):
             if N_send_r > 0 and i_attr < 7:
                 species.__dict__[attr_list[i_attr][1]+'_e'] = \
                     cupy.append(species.__dict__[attr_list[i_attr][1]+'_e'], right_buffer)
+        
 
     # Integer quantities:
     if n_int > 0:

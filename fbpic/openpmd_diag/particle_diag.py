@@ -293,7 +293,6 @@ class ParticleDiagnostic(OpenPMDDiagnostic) :
             # Write the datasets for each particle datatype
             self.write_particles( species_grp, species, n_rank,
                 Ntot, select_array, self.array_quantities_dict[species_name] )
-
             if self.save_escaped:
                 # Select the particles that will be written
                 select_array = self.apply_escaped_selection( species )

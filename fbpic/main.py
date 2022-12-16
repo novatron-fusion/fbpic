@@ -407,7 +407,7 @@ class Simulation(object):
         # Initialize variables to measure the time taken by the simulation
         if show_progress and self.comm.rank==0:
             progress_bar = ProgressBar( N )
-
+        
         # Send simulation data to GPU (if CUDA is used)
         if self.use_cuda:
             send_data_to_gpu(self)
@@ -426,7 +426,6 @@ class Simulation(object):
 
         # Beginning of the N iterations
         # -----------------------------
-
         # Loop over timesteps
         for i_step in range(N):
 
@@ -448,7 +447,6 @@ class Simulation(object):
                 # continuous injection of new particles by the moving window.
                 # (In the case of single-proc periodic simulations, particles
                 # are shifted by one box length, so they remain inside the box)
-
                 for species in self.ptcl:
                     self.comm.exchange_particles(species, fld,
                                                 self.walls,
@@ -532,7 +530,7 @@ class Simulation(object):
             # (e.g. ionization, Compton scattering, ...)
             for species in ptcl:
                 species.handle_elementary_processes( self.time + 0.5*dt )
-             
+
             # Handle particle boundaries
             # e.g. reflection or bounce 
             for species in ptcl:
@@ -581,7 +579,7 @@ class Simulation(object):
                 fld.exchanged_source['J'] = True
 
             for walls in self.walls:
-                walls.save_fields( fld.interp, self.comm,  self.iteration )
+                walls.save_fields( fld.interp, self.comm, self.iteration )
                 
             # Push the fields E and B on the spectral grid to t = (n+1) dt
             fld.push( use_true_rho, check_exchanges=(self.comm.size > 1) )
@@ -798,7 +796,8 @@ class Simulation(object):
         
         # - Wall boundary condition
         for walls in self.walls:
-            walls.set_boundaryconditions( fld.interp, self.comm, self.time, self.iteration )
+            walls.set_boundary_conditions( interp=fld.interp, comm=self.comm, 
+                                        iteration=self.iteration, t_boost=self.time )
 
         # - Update spectral space (and interpolation space if needed)
         if self.use_pml:

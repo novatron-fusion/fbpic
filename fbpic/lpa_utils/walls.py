@@ -126,10 +126,10 @@ class Mirror(Wall):
         else:
             raise TypeError('m should be an int or a list of ints.')
     
-    def save_fields( self, interp, comm, iteration ):
+    def save_fields( self, *args, **kwargs ):
         pass
 
-    def set_boundary_conditions( self, interp, comm, t_boost, iteration ):
+    def set_boundary_conditions( self, interp, comm, t_boost, *args, **kwargs ):
         """
         Set the fields to 0 in a slice orthogonal to z
 
@@ -270,7 +270,7 @@ class PEC(Wall):
             self.Ez_old = Ez
                     
 
-    def set_boundary_conditions( self, interp, comm, t_boost, iteration ):
+    def set_boundary_conditions( self, interp, comm, iteration, *args, **kwargs ):
         """
         Reflect fields at perfect electric conductor
         """
@@ -779,7 +779,7 @@ class PMC(Wall):
         else:
             raise TypeError('m should be an int or a list of ints.')
 
-    def save_fields( self, interp, comm, iteration ):
+    def save_fields( self, interp, *args, **kwargs ):
         for i, grid in enumerate(interp):
 
             if self.modes is not None:
@@ -790,7 +790,7 @@ class PMC(Wall):
             self.Bt_o = getattr( grid, 'Bt')
             self.Bz_o = getattr( grid, 'Bz')
 
-    def set_boundary_conditions( self, interp, comm, t_boost, iteration ):
+    def set_boundary_conditions( self, interp, comm, *args, **kwargs ):
         """
         Reflect B field at perfect magnetic conductor
         """
