@@ -677,7 +677,7 @@ class PEC(Wall):
                 s = ( (U[i,j-1]-u1)**2 + (U[i,j+1]-u1)**2 \
                         + (U[i-1,j]-u1)**2 + (U[i+1,j]-u1)**2 + a )**0.5
 
-                sim = ( (U[i-1,j-1]-u1)**2 + (U[i-1,j+1]-U[i-1,j])**2 \
+                sim = ( (U[i-1,j-1]-U[i-1,j])**2 + (U[i-1,j+1]-U[i-1,j])**2 \
                         + (U[i-2,j]-U[i-1,j])**2 + (u1-U[i-1,j])**2 + a )**0.5
 
                 sip = ( (U[i+1,j-1]-U[i+1,j])**2 + (U[i+1,j+1]-U[i+1,j])**2 \
@@ -717,7 +717,7 @@ class PEC(Wall):
         M = u0.shape[1]
         dim_grid_2d, dim_block_2d = cuda_tpb_bpg_2d(N, M)
         
-        dt = 0.002
+        dt = 0.00002
 
         v = u0.real
         U = u0.real
