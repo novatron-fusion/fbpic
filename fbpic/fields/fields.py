@@ -125,6 +125,8 @@ class Fields(object) :
         self.Nz = Nz
         self.Nr = Nr
         self.rmax = rmax
+        self.zmin = zmin
+        self.zmax = zmax
         self.Nm = Nm
         self.dt = dt
         self.n_order = n_order

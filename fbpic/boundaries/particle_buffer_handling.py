@@ -206,6 +206,7 @@ def remove_particles_gpu(species, fld, walls, n_guard, left_proc, right_proc):
         proc and right proc respectively, and where n_float and n_int
         are the number of float and integer quantities respectively
     """
+    """
     for wall in walls:
         # Get the threads per block and the blocks per grid
         dim_grid_1d, dim_block_1d = cuda_tpb_bpg_1d( species.Ntot )
@@ -213,6 +214,7 @@ def remove_particles_gpu(species, fld, walls, n_guard, left_proc, right_proc):
             wall.wall_arr,fld.interp[0].zmin, fld.interp[0].zmax, species.x, species.y, species.z
         )
         species.sorted == False
+    """
     # Check if particles are sorted
     # (The particles are usually expected to be sorted from the previous
     # iteration at this point - except at the first iteration of `step`.)

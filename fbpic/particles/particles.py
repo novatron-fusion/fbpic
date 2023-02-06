@@ -568,7 +568,7 @@ class Particles(object) :
                 dim_grid_1d, dim_block_1d = cuda_tpb_bpg_1d( self.Ntot )
                 if self.particle_boundaries['zmin'] == 'reflective':
                     reflect_particles_left[dim_grid_1d, dim_block_1d](
-                        self.zmin, self.z, self.uz)
+                        self.zmin, self.z, self.ux, self.uy, self.uz, self.q)
                 
                 if self.particle_boundaries['zmin'] == 'stop':
                     stop_particles_left[dim_grid_1d, dim_block_1d](

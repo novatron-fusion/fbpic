@@ -664,10 +664,10 @@ class PEC(Wall):
             u1_inv = 1 / u1
             if segments[i,j] == 1 or segments[i,j] == 2:
                 Lambda = 15
-                tol = 1.e-3
+                tol = 1.e-1
             else:
                 Lambda = 9
-                tol = 1.e-3
+                tol = 1.e-1
             
             if abs((u1 - U[i+1,j]) * u1_inv) > tol \
                 or abs((u1 - U[i-1,j]) * u1_inv) > tol \
@@ -717,7 +717,7 @@ class PEC(Wall):
         M = u0.shape[1]
         dim_grid_2d, dim_block_2d = cuda_tpb_bpg_2d(N, M)
         
-        dt = 0.00002
+        dt = 0.0002
 
         v = u0.real
         U = u0.real

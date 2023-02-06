@@ -424,6 +424,9 @@ class Simulation(object):
             fld.interp2spect('E_pml')
             fld.interp2spect('B_pml')
 
+        for walls in self.walls:
+                walls.save_fields( fld.interp, self.comm, self.iteration )
+
         # Beginning of the N iterations
         # -----------------------------
         # Loop over timesteps
@@ -479,15 +482,14 @@ class Simulation(object):
                     and self.iteration >= collision.start:
                     collision.handle_collisions( fld, dt )
 
-            """
+            
             # Increase density at user-defined intervals
             if self.comm.injection['p'] is not None:
                 if self.iteration % self.comm.injection['p'] == 0 \
                     and self.time <= self.comm.injection['t'] \
                     and self.iteration > 0:
                     for species in ptcl:
-                        species.w *= 1.05
-            """
+                        species.w *= 1.01
 
             # Keep field arrays sorted throughout gathering+push
             for species in ptcl:
@@ -789,7 +791,6 @@ class Simulation(object):
         # - Exchange guard cells and damp fields
         self.comm.exchange_fields(fld.interp, 'E', 'replace')
         self.comm.exchange_fields(fld.interp, 'B', 'replace')
-        self.comm.exchange_fields(fld.interp, 'J', 'replace')
         self.comm.damp_EB_open_boundary( fld.interp ) # Damp along z
         if self.use_pml:
             self.comm.damp_pml_EB( fld.interp ) # Damp in radial PML
@@ -816,42 +817,6 @@ class Simulation(object):
             # Get the corresponding fields in interpolation space
             fld.spect2interp('E')
             fld.spect2interp('B')
-
-    def fix_current_at_domain_edge(self):
-        """
-        Handle boundaries for the current J
-        """
-        # Shortcut
-        fld = self.fld
-
-        # - Get fields in interpolation space (or partial interpolation space)
-        #   to prepare for damp/exchange
-        if self.use_pml:
-            # Exchange/damp operation in z and r ; do full transform
-            fld.spect2interp('J')
-        else:
-            # Exchange/damp operation is purely along z; spectral fields
-            # are updated by doing an iFFT/FFT instead of a full transform
-            fld.spect2partial_interp('J')
-
-        # - Exchange guard cells and damp fields
-        self.comm.exchange_fields(fld.interp, 'J', 'replace')
-
-        # - PEC boundary condition
-        for walls in self.walls:
-            walls.set_current_to_zero( fld.interp, self.comm )
-
-        # - Update spectral space (and interpolation space if needed)
-        if self.use_pml:
-            # Exchange/damp operation in z and r ; do full transform back
-            fld.interp2spect('J')
-        else:
-            # Exchange/damp operation is purely along z; spectral fields
-            # are updated by doing an iFFT/FFT instead of a full transform
-            fld.partial_interp2spect('J')
-            # Get the corresponding fields in interpolation space
-            fld.spect2interp('J')
-
 
     def shift_galilean_boundaries(self, dt):
         """
