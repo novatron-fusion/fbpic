@@ -206,15 +206,6 @@ def remove_particles_gpu(species, fld, walls, n_guard, left_proc, right_proc):
         proc and right proc respectively, and where n_float and n_int
         are the number of float and integer quantities respectively
     """
-    """
-    for wall in walls:
-        # Get the threads per block and the blocks per grid
-        dim_grid_1d, dim_block_1d = cuda_tpb_bpg_1d( species.Ntot )
-        remove_particles_radially[dim_grid_1d, dim_block_1d](
-            wall.wall_arr,fld.interp[0].zmin, fld.interp[0].zmax, species.x, species.y, species.z
-        )
-        species.sorted == False
-    """
     # Check if particles are sorted
     # (The particles are usually expected to be sorted from the previous
     # iteration at this point - except at the first iteration of `step`.)
@@ -241,96 +232,197 @@ def remove_particles_gpu(species, fld, walls, n_guard, left_proc, right_proc):
         i_min = 0
     i_max = int(prefix_sum[ iz_max*(Nr+1) - 1 ])
 
-    # Total number of particles in each particle group
-    new_Ntot = i_max - i_min
-    N_send_l = i_min
-    N_send_r = species.Ntot - i_max
-
-    # Allocate the sending buffers on the CPU
-    n_float = species.n_float_quantities
-    n_int = species.n_integer_quantities
-    
-    if left_proc is not None:
-        float_send_left = np.empty((n_float, N_send_l), dtype=np.float64)
-        uint_send_left = np.empty((n_int, N_send_l), dtype=np.uint64)
-    else:
-        float_send_left = np.empty((n_float, 0), dtype=np.float64)
-        uint_send_left = np.empty((n_int, 0), dtype=np.uint64)
-    if right_proc is not None:
-        float_send_right = np.empty((n_float, N_send_r), dtype=np.float64)
-        uint_send_right = np.empty((n_int, N_send_r), dtype=np.uint64)
-    else:
-        float_send_right = np.empty((n_float, 0), dtype=np.float64)
-        uint_send_right = np.empty((n_int, 0), dtype=np.uint64)
-
-    # Get the threads per block and the blocks per grid
-    dim_grid_1d, dim_block_1d = cuda_tpb_bpg_1d( species.Ntot )
-    # Float quantities:
-    # Build list of float attributes to copy
-    attr_list = [ (species,'x'), (species,'y'), (species,'z'),
-                    (species,'ux'), (species,'uy'), (species,'uz'),
-                    (species,'w'), (species,'inv_gamma') ]
-    if species.ionizer is not None:
-        attr_list.append( (species.ionizer,'w_times_level') )
-    # Loop through the float attributes
-    for i_attr in range(n_float):
-        # Initialize 3 buffer arrays on the GPU (need to be initialized
-        # inside the loop, as `copy_to_host` invalidates these arrays)
-        left_buffer = cupy.empty((N_send_l,), dtype=np.float64)
-        right_buffer = cupy.empty((N_send_r,), dtype=np.float64)
-        stay_buffer = cupy.empty((new_Ntot,), dtype=np.float64)
-        # Check that the buffers are still on GPU
-        # (safeguard against automatic memory management)
-        assert type(left_buffer) != np.ndarray
-        assert type(right_buffer) != np.ndarray
-        assert type(left_buffer) != np.ndarray
-        # Split the particle array into the 3 buffers on the GPU
-        particle_array = getattr( attr_list[i_attr][0], attr_list[i_attr][1] )
-        split_particles_to_buffers[dim_grid_1d, dim_block_1d]( particle_array,
-                    left_buffer, stay_buffer, right_buffer, i_min, i_max)
-
-        # Assign the stay_buffer to the initial particle data array
-        # and fill the sending buffers (if needed for MPI)
-        setattr( attr_list[i_attr][0], attr_list[i_attr][1], stay_buffer)
-        if left_proc is not None:
-            left_buffer.get( out=float_send_left[i_attr] )
-            if N_send_l > 0 and i_attr < 7:
-                species.__dict__[attr_list[i_attr][1]+'_e'] = \
-                    cupy.append(species.__dict__[attr_list[i_attr][1]+'_e'], left_buffer)
-        if right_proc is not None:
-            right_buffer.get( out=float_send_right[i_attr] )
-            if N_send_r > 0 and i_attr < 7:
-                species.__dict__[attr_list[i_attr][1]+'_e'] = \
-                    cupy.append(species.__dict__[attr_list[i_attr][1]+'_e'], right_buffer)
+    if walls:
+        for wall in walls:
+            attr_list = [ (species,'x'), (species,'y'), (species,'z'),
+                (species,'ux'), (species,'uy'), (species,'uz'),
+                (species,'w'), (species,'inv_gamma') ]
+            if species.ionizer is not None:
+                attr_list.append( (species.ionizer,'w_times_level') )
         
+            mask_remove = cupy.zeros(species.Ntot, dtype=bool)
+            # Get the threads per block and the blocks per grid
+            dim_grid_1d, dim_block_1d = cuda_tpb_bpg_1d( species.Ntot )
+            remove_particles_outside_boundary[dim_grid_1d, dim_block_1d](
+                wall.wall_arr, wall.segments, mask_remove, species.x, species.y, species.z,
+                fld.interp[0].zmin, fld.interp[0].zmax, fld.interp[0].rmax,
+                Nz, Nr )
+            #remove_particles_polygon[dim_grid_1d, dim_block_1d](
+            #   wall.wall_arr,fld.interp[0].zmin, fld.interp[0].zmax, species.x, species.y, species.z
+            #)
 
-    # Integer quantities:
-    if n_int > 0:
-        attr_list = []
-    if species.tracker is not None:
-        attr_list.append( (species.tracker,'id') )
-    if species.ionizer is not None:
-        attr_list.append( (species.ionizer,'ionization_level') )
-    for i_attr in range(n_int):
-        # Initialize 3 buffer arrays on the GPU (need to be initialized
-        # inside the loop, as `copy_to_host` invalidates these arrays)
-        left_buffer = cupy.empty((N_send_l,), dtype=np.uint64)
-        right_buffer = cupy.empty((N_send_r,), dtype=np.uint64)
-        stay_buffer = cupy.empty((new_Ntot,), dtype=np.uint64)
-        # Split the particle array into the 3 buffers on the GPU
-        particle_array = getattr( attr_list[i_attr][0], attr_list[i_attr][1] )
-        split_particles_to_buffers[dim_grid_1d, dim_block_1d]( particle_array,
-            left_buffer, stay_buffer, right_buffer, i_min, i_max)
-        # Assign the stay_buffer to the initial particle data array
-        # and fill the sending buffers (if needed for MPI)
-        setattr( attr_list[i_attr][0], attr_list[i_attr][1], stay_buffer )
+            nr_remove = int(cupy.count_nonzero(mask_remove))
+            nr_left = i_min - int(cupy.count_nonzero(mask_remove[:i_min]))
+            nr_right = species.Ntot - i_max - int(cupy.count_nonzero(mask_remove[i_max:]))
+            new_Ntot = species.Ntot - nr_remove - nr_left - nr_right
+
+            # Total number of particles in each particle group
+            N_send_l = i_min
+            N_send_r = species.Ntot - i_max
+
+            # Allocate the sending buffers on the CPU
+            n_float = species.n_float_quantities
+            n_int = species.n_integer_quantities
+
+            if left_proc is not None:
+                float_send_left = np.empty((n_float, N_send_l), dtype=np.float64)
+                uint_send_left = np.empty((n_int, N_send_l), dtype=np.uint64)
+            else:
+                float_send_left = np.empty((n_float, 0), dtype=np.float64)
+                uint_send_left = np.empty((n_int, 0), dtype=np.uint64)
+            if right_proc is not None:
+                float_send_right = np.empty((n_float, N_send_r), dtype=np.float64)
+                uint_send_right = np.empty((n_int, N_send_r), dtype=np.uint64)
+            else:
+                float_send_right = np.empty((n_float, 0), dtype=np.float64)
+                uint_send_right = np.empty((n_int, 0), dtype=np.uint64)
+            
+            # Loop through the float attributes
+            for i_attr in range(n_float):
+                # Initialize 2 buffer arrays on the GPU (need to be initialized
+                # inside the loop, as `copy_to_host` invalidates these arrays)
+                left_buffer = cupy.empty((N_send_l,), dtype=np.float64)
+                right_buffer = cupy.empty((N_send_r,), dtype=np.float64)
+                # Allocate the sending buffers on the CPU
+                stay_buffer = cupy.empty((new_Ntot,), dtype=np.float64)
+                remove_buffer = cupy.empty((nr_remove,), dtype=np.float64)
+
+                assert type(left_buffer) != np.ndarray
+                assert type(right_buffer) != np.ndarray
+                assert type(stay_buffer) != np.ndarray
+                assert type(remove_buffer) != np.ndarray
+
+                particle_array = getattr( attr_list[i_attr][0], attr_list[i_attr][1] )
+                #left_buffer = particle_array[:i_min][cupy.logical_not(mask_remove[:i_min]),...]
+                #right_buffer = particle_array[:i_max][cupy.logical_not(mask_remove[:i_max]),...]
+                #stay_buffer = particle_array[i_min:i_max][cupy.logical_not(mask_remove[i_min:i_max]),...]
+                split_particles_buffers[dim_grid_1d, dim_block_1d]( particle_array, mask_remove, left_buffer,
+                    stay_buffer, right_buffer, i_min, i_max )
+                remove_buffer = particle_array[mask_remove,...]
+                setattr( attr_list[i_attr][0], attr_list[i_attr][1], stay_buffer )
+                if left_proc is not None:
+                    left_buffer.get( out=float_send_left[i_attr] )
+                if right_proc is not None:
+                    right_buffer.get( out=float_send_right[i_attr] )
+                if nr_remove > 0 and i_attr < 7:
+                    species.__dict__[attr_list[i_attr][1]+'_e'] = \
+                        cupy.append(species.__dict__[attr_list[i_attr][1]+'_e'], remove_buffer)
+
+            # Integer quantities:
+            if n_int > 0:
+                attr_list = []
+            if species.tracker is not None:
+                attr_list.append( (species.tracker,'id') )
+            if species.ionizer is not None:
+                attr_list.append( (species.ionizer,'ionization_level') )
+            for i_attr in range(n_int):
+                # Initialize 2 buffer arrays on the GPU (need to be initialized
+                # inside the loop, as `copy_to_host` invalidates these arrays)
+                left_buffer = cupy.empty((N_send_l,), dtype=np.float64)
+                right_buffer = cupy.empty((N_send_r,), dtype=np.float64)
+                # Allocate the sending buffers on the CPU
+                stay_buffer = cupy.empty((new_Ntot,), dtype=np.float64)
+                remove_buffer = cupy.empty((nr_remove,), dtype=np.float64)
+
+                particle_array = getattr( attr_list[i_attr][0], attr_list[i_attr][1] )
+                #left_buffer = particle_array[:i_min][cupy.logical_not(mask_remove[:i_min]),...]
+                #right_buffer = particle_array[:i_max][cupy.logical_not(mask_remove[:i_max]),...]
+                #stay_buffer = particle_array[i_min:i_max][cupy.logical_not(mask_remove[i_min:i_max]),...]
+                split_particles_buffers[dim_grid_1d, dim_block_1d]( particle_array, mask_remove, left_buffer,
+                    stay_buffer, right_buffer, i_min, i_max )
+                remove_buffer = particle_array[mask_remove,...]
+                setattr( attr_list[i_attr][0], attr_list[i_attr][1], stay_buffer )
+                if left_proc is not None:
+                    left_buffer.get( out=uint_send_left[i_attr] )
+                if right_proc is not None:
+                    right_buffer.get( out=uint_send_right[i_attr] )
+
+            species.sorted == False
+            species.Ntot = new_Ntot
+    else:
+        # Total number of particles in each particle group
+        new_Ntot = i_max - i_min
+        N_send_l = i_min
+        N_send_r = species.Ntot - i_max
+
+        # Allocate the sending buffers on the CPU
+        n_float = species.n_float_quantities
+        n_int = species.n_integer_quantities
+
         if left_proc is not None:
-            left_buffer.get( out=uint_send_left[i_attr] )
+            float_send_left = np.empty((n_float, N_send_l), dtype=np.float64)
+            uint_send_left = np.empty((n_int, N_send_l), dtype=np.uint64)
+        else:
+            float_send_left = np.empty((n_float, 0), dtype=np.float64)
+            uint_send_left = np.empty((n_int, 0), dtype=np.uint64)
         if right_proc is not None:
-            right_buffer.get( out=uint_send_right[i_attr] )
+            float_send_right = np.empty((n_float, N_send_r), dtype=np.float64)
+            uint_send_right = np.empty((n_int, N_send_r), dtype=np.uint64)
+        else:
+            float_send_right = np.empty((n_float, 0), dtype=np.float64)
+            uint_send_right = np.empty((n_int, 0), dtype=np.uint64)
 
-    # Change the new total number of particles
-    species.Ntot = new_Ntot
+        # Get the threads per block and the blocks per grid
+        dim_grid_1d, dim_block_1d = cuda_tpb_bpg_1d( species.Ntot )
+        # Float quantities:
+        # Build list of float attributes to copy
+        attr_list = [ (species,'x'), (species,'y'), (species,'z'),
+                        (species,'ux'), (species,'uy'), (species,'uz'),
+                        (species,'w'), (species,'inv_gamma') ]
+        if species.ionizer is not None:
+            attr_list.append( (species.ionizer,'w_times_level') )
+        # Loop through the float attributes
+        for i_attr in range(n_float):
+            # Initialize 3 buffer arrays on the GPU (need to be initialized
+            # inside the loop, as `copy_to_host` invalidates these arrays)
+            left_buffer = cupy.empty((N_send_l,), dtype=np.float64)
+            right_buffer = cupy.empty((N_send_r,), dtype=np.float64)
+            stay_buffer = cupy.empty((new_Ntot,), dtype=np.float64)
+            # Check that the buffers are still on GPU
+            # (safeguard against automatic memory management)
+            assert type(left_buffer) != np.ndarray
+            assert type(right_buffer) != np.ndarray
+            assert type(stay_buffer) != np.ndarray
+            # Split the particle array into the 3 buffers on the GPU
+            particle_array = getattr( attr_list[i_attr][0], attr_list[i_attr][1] )
+            split_particles_to_buffers[dim_grid_1d, dim_block_1d]( particle_array,
+                        left_buffer, stay_buffer, right_buffer, i_min, i_max)
+
+            # Assign the stay_buffer to the initial particle data array
+            # and fill the sending buffers (if needed for MPI)
+            setattr( attr_list[i_attr][0], attr_list[i_attr][1], stay_buffer)
+            if left_proc is not None:
+                left_buffer.get( out=float_send_left[i_attr] )
+            if right_proc is not None:
+                right_buffer.get( out=float_send_right[i_attr] )
+
+        # Integer quantities:
+        if n_int > 0:
+            attr_list = []
+        if species.tracker is not None:
+            attr_list.append( (species.tracker,'id') )
+        if species.ionizer is not None:
+            attr_list.append( (species.ionizer,'ionization_level') )
+        for i_attr in range(n_int):
+            # Initialize 3 buffer arrays on the GPU (need to be initialized
+            # inside the loop, as `copy_to_host` invalidates these arrays)
+            left_buffer = cupy.empty((N_send_l,), dtype=np.uint64)
+            right_buffer = cupy.empty((N_send_r,), dtype=np.uint64)
+            stay_buffer = cupy.empty((new_Ntot,), dtype=np.uint64)
+            # Split the particle array into the 3 buffers on the GPU
+            particle_array = getattr( attr_list[i_attr][0], attr_list[i_attr][1] )
+            split_particles_to_buffers[dim_grid_1d, dim_block_1d]( particle_array,
+                left_buffer, stay_buffer, right_buffer, i_min, i_max)
+            # Assign the stay_buffer to the initial particle data array
+            # and fill the sending buffers (if needed for MPI)
+            setattr( attr_list[i_attr][0], attr_list[i_attr][1], stay_buffer )
+            if left_proc is not None:
+                left_buffer.get( out=uint_send_left[i_attr] )
+            if right_proc is not None:
+                right_buffer.get( out=uint_send_right[i_attr] )
+
+        # Change the new total number of particles
+        species.Ntot = new_Ntot
 
     # Return the sending buffers
     return(float_send_left, float_send_right, uint_send_left, uint_send_right)
@@ -695,10 +787,9 @@ if cuda_installed:
                 z[i] += l_box
 
     @compile_cupy
-    def remove_particles_radially( wall_arr, zmin, zmax, x, y, z ):
+    def remove_particles_outside_boundary( wall_arr, segments, mask, x, y, z, zmin, zmax, rmax, Nz, Nr):
         """
-        Transfer particles that are outside of wall (polygon)
-        to z > zmax
+        Remove particles that are outside of wall (polygon)
 
         Parameters
         ----------
@@ -713,12 +804,120 @@ if cuda_installed:
         """
         i = cuda.grid(1)
         if i < x.shape[0]:
+            xj = x[i]
+            yj = y[i]
+            zj = z[i]
+
+            # Cylindrical conversion
+            rj = m.sqrt( xj**2 + yj**2 )
+
+            invdz = 1 / (zmax - zmin) / Nz
+            invdr = 1 / rmax / Nr
+
+            # --------------------------------------------
+            # Positions of the particles, in the cell unit
+            r_cell =  invdr*(rj - 0) - 0.5
+            z_cell =  invdz*(zj - zmin) - 0.5
+            # Original index of the uppper and lower cell
+            ir_lower = int(m.floor( r_cell ))
+            ir_upper = ir_lower + 1
+            iz_lower = int(m.floor( z_cell ))
+            iz_upper = iz_lower + 1
+
+            if ir_lower > Nr-1 or ir_upper > Nr-1:
+                in_poly = ray_casting(z[i], rj, wall_arr)
+                if not in_poly:
+                    mask[i] = True
+            else:
+                # Treat the boundary conditions
+                # -----------------------------
+                # guard cells in lower r
+                if ir_lower < 0:
+                    ir_lower = 0
+    
+                fQ11 = segments[iz_lower, ir_lower]
+                fQ12 = segments[iz_lower, ir_upper]
+                fQ22 = segments[iz_upper, ir_upper]
+                fQ21 = segments[iz_upper, ir_lower]
+
+                if fQ11 > 1 and fQ12 > 1 \
+                    and  fQ22 > 1  and fQ21 > 1:
+                    mask[i] = True
+                elif fQ11 > 1 or fQ12 > 1 \
+                    or  fQ22 > 1 or fQ21 > 1:
+                    in_poly = ray_casting(z[i], rj, wall_arr)
+                    if not in_poly:
+                        mask[i] = True
+
+    @compile_cupy
+    def split_particles_buffers( particle_array, remove_mask, left_buffer,
+                    stay_buffer, right_buffer, i_min, i_max ):
+        """
+        Split the (sorted) particle array into the three arrays left_buffer,
+        stay_buffer and right_buffer (in the same order)
+
+        Parameters:
+        ------------
+        particle_array: 1d device arrays of floats
+            Original array of particles
+            (represents *one* of the particle quantities)
+
+        left_buffer, right_buffer: 1d device arrays of floats
+            Will contain the particles that are outside of the physical domain
+            Note: if the boundary is open, then these buffers have size 0
+            and in this case, they will not be filled
+            (the corresponding particles are simply lost)
+
+        stay_buffer: 1d device array of floats
+            Will contain the particles that are inside the physical domain
+
+        i_min, i_max: int
+            Indices of particle_array between which particles are kept
+            (and thus copied to stay_buffer). The particles below i_min
+            (resp. above i_max) are copied to left_buffer (resp. right_buffer)
+        """
+        # Get a 1D CUDA grid (the index corresponds to a particle index)
+        i = cuda.grid(1)
+
+        # Auxiliary variables
+        n_left = left_buffer.shape[0]
+        n_right = right_buffer.shape[0]
+        Ntot = particle_array.shape[0]
+
+        # Copy the particles into the right buffer
+        if remove_mask[i] == False:
+            if i < i_min:
+                # Check whether buffer is not empty (open boundary)
+                if n_left != 0:
+                    left_buffer[i] = particle_array[i]
+            elif i < i_max:
+                stay_buffer[i-i_min] = particle_array[i]
+            elif i < Ntot:
+                # Check whether buffer is not empty (open boundary)
+                if (n_right != 0):
+                    right_buffer[i-i_max] = particle_array[i] 
+
+    @compile_cupy
+    def remove_particles_polygon( wall_arr, mask, x, y, z, ):
+        """
+        Flag particles that are outside of wall (polygon)
+        to be removed
+
+        Parameters
+        ----------
+        wall_arr : array of points
+            user-defined polygon
+
+        mask : boolean array
+
+        x, y, z : 1darray of floats (in meters)
+            The position of the particles
+            (is modified by this function)
+        """
+        i = cuda.grid(1)
+        if i < x.shape[0]:
             r = m.sqrt(x[i]**2 + y[i]**2)
 
             in_poly = ray_casting(z[i], r, wall_arr)
             if not in_poly:
-                if z[i] < 0:
-                    z[i] = zmin - 1.e-6
-                else:
-                    z[i] = zmax + 1.e-6
-
+                mask[i] = False

@@ -294,7 +294,6 @@ class PEC(Wall):
                 Et = getattr( grid, 'Et')
                 Ez = getattr( grid, 'Ez')
 
-
                 dim_grid_2d, dim_block_2d = cuda_tpb_bpg_2d(interp[0].Nz, interp[0].Nr)
                 if self.method == 'active':
                     self.pec_lower_penalty_term[dim_grid_2d, dim_block_2d]( Ez, Er, Et,
@@ -357,7 +356,6 @@ class PEC(Wall):
                 self.laplacian_smoothing[dim_grid_2d, dim_block_2d](Ez, self.segments)
                 self.laplacian_smoothing[dim_grid_2d, dim_block_2d](Er, self.segments)
                 self.laplacian_smoothing[dim_grid_2d, dim_block_2d](Et, self.segments)
-                
 
                 
     @compile_cupy
@@ -664,10 +662,10 @@ class PEC(Wall):
             u1_inv = 1 / u1
             if segments[i,j] == 1 or segments[i,j] == 2:
                 Lambda = 15
-                tol = 1.e-1
+                tol = 1.e-3
             else:
                 Lambda = 9
-                tol = 1.e-1
+                tol = 1.e-3
             
             if abs((u1 - U[i+1,j]) * u1_inv) > tol \
                 or abs((u1 - U[i-1,j]) * u1_inv) > tol \
