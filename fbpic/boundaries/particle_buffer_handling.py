@@ -342,10 +342,6 @@ def remove_particles_gpu(species, fld, walls, n_guard, left_proc, right_proc):
                 if right_proc is not None:
                     right_buffer.get( out=uint_send_right[i_attr] )
 
-            if nr_remove > 0:
-                species.sort_particles(fld = fld)
-                species.sorted = True
-
             species.Ntot = new_Ntot
     else:
         # Total number of particles in each particle group
