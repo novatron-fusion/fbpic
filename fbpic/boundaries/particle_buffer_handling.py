@@ -230,6 +230,10 @@ def remove_particles_gpu(species, fld, walls, n_guard, left_proc, right_proc):
         i_min = int(prefix_sum[ iz_min*(Nr+1) - 1 ])
     else:
         i_min = 0
+    print(prefix_sum.shape)
+    print(Nr)
+    print(iz_max)
+    print(iz_max*(Nr+1) - 1)
     i_max = int(prefix_sum[ iz_max*(Nr+1) - 1 ])
 
     if walls:
@@ -243,18 +247,23 @@ def remove_particles_gpu(species, fld, walls, n_guard, left_proc, right_proc):
             mask_remove = cupy.zeros(species.Ntot, dtype=bool)
             # Get the threads per block and the blocks per grid
             dim_grid_1d, dim_block_1d = cuda_tpb_bpg_1d( species.Ntot )
-            remove_particles_outside_boundary[dim_grid_1d, dim_block_1d](
-                wall.wall_arr, wall.segments, mask_remove, species.x, species.y, species.z,
-                fld.interp[0].zmin, fld.interp[0].zmax, fld.interp[0].rmax,
-                Nz, Nr )
-            #remove_particles_polygon[dim_grid_1d, dim_block_1d](
-            #   wall.wall_arr,fld.interp[0].zmin, fld.interp[0].zmax, species.x, species.y, species.z
-            #)
+            #remove_particles_outside_boundary[dim_grid_1d, dim_block_1d](
+            #    wall.wall_arr, wall.segments, mask_remove, species.x, species.y, species.z,
+            #    fld.interp[0].zmin, fld.interp[0].zmax, fld.interp[0].rmax,
+            #    Nz, Nr )
+            remove_particles_polygon[dim_grid_1d, dim_block_1d]( 
+                wall.wall_arr, mask_remove, species.x, species.y, species.z )
 
             nr_remove = int(cupy.count_nonzero(mask_remove))
             nr_left = i_min - int(cupy.count_nonzero(mask_remove[:i_min]))
             nr_right = species.Ntot - i_max - int(cupy.count_nonzero(mask_remove[i_max:]))
             new_Ntot = species.Ntot - nr_remove - nr_left - nr_right
+
+            print("\n")
+            print("nr_remove = ", nr_remove)
+            print("nr_left = ", nr_left)
+            print("nr_right = ", nr_right)
+            print("new_Ntot = ", new_Ntot)
 
             # Total number of particles in each particle group
             N_send_l = i_min
@@ -811,8 +820,8 @@ if cuda_installed:
             # Cylindrical conversion
             rj = m.sqrt( xj**2 + yj**2 )
 
-            invdz = 1 / (zmax - zmin) / Nz
-            invdr = 1 / rmax / Nr
+            invdz = Nz / (zmax - zmin)
+            invdr = Nr / rmax
 
             # --------------------------------------------
             # Positions of the particles, in the cell unit
@@ -825,7 +834,7 @@ if cuda_installed:
             iz_upper = iz_lower + 1
 
             if ir_lower > Nr-1 or ir_upper > Nr-1:
-                in_poly = ray_casting(z[i], rj, wall_arr)
+                in_poly = ray_casting(zj, rj, wall_arr)
                 if not in_poly:
                     mask[i] = True
             else:
@@ -845,12 +854,12 @@ if cuda_installed:
                     mask[i] = True
                 elif fQ11 > 1 or fQ12 > 1 \
                     or  fQ22 > 1 or fQ21 > 1:
-                    in_poly = ray_casting(z[i], rj, wall_arr)
+                    in_poly = ray_casting(zj, rj, wall_arr)
                     if not in_poly:
                         mask[i] = True
 
     @compile_cupy
-    def split_particles_buffers( particle_array, remove_mask, left_buffer,
+    def split_particles_buffers( particle_array, mask_remove, left_buffer,
                     stay_buffer, right_buffer, i_min, i_max ):
         """
         Split the (sorted) particle array into the three arrays left_buffer,
@@ -885,7 +894,7 @@ if cuda_installed:
         Ntot = particle_array.shape[0]
 
         # Copy the particles into the right buffer
-        if remove_mask[i] == False:
+        if mask_remove[i] == False:
             if i < i_min:
                 # Check whether buffer is not empty (open boundary)
                 if n_left != 0:
@@ -920,4 +929,4 @@ if cuda_installed:
 
             in_poly = ray_casting(z[i], r, wall_arr)
             if not in_poly:
-                mask[i] = False
+                mask[i] = True
