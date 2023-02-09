@@ -230,11 +230,14 @@ def remove_particles_gpu(species, fld, walls, n_guard, left_proc, right_proc):
         i_min = int(prefix_sum[ iz_min*(Nr+1) - 1 ])
     else:
         i_min = 0
+    """
     print(prefix_sum.shape)
     print(Nr)
     print(iz_max)
     print(iz_max*(Nr+1) - 1)
+    """
     i_max = int(prefix_sum[ iz_max*(Nr+1) - 1 ])
+
 
     if walls:
         for wall in walls:
@@ -258,16 +261,9 @@ def remove_particles_gpu(species, fld, walls, n_guard, left_proc, right_proc):
             nr_left = i_min - int(cupy.count_nonzero(mask_remove[:i_min]))
             nr_right = species.Ntot - i_max - int(cupy.count_nonzero(mask_remove[i_max:]))
             new_Ntot = species.Ntot - nr_remove - nr_left - nr_right
-
-            print("\n")
-            print("nr_remove = ", nr_remove)
-            print("nr_left = ", nr_left)
-            print("nr_right = ", nr_right)
-            print("new_Ntot = ", new_Ntot)
-
-            # Total number of particles in each particle group
-            N_send_l = i_min
-            N_send_r = species.Ntot - i_max
+            
+            N_send_l = nr_left
+            N_send_r = nr_right
 
             # Allocate the sending buffers on the CPU
             n_float = species.n_float_quantities
@@ -302,11 +298,11 @@ def remove_particles_gpu(species, fld, walls, n_guard, left_proc, right_proc):
                 assert type(remove_buffer) != np.ndarray
 
                 particle_array = getattr( attr_list[i_attr][0], attr_list[i_attr][1] )
-                #left_buffer = particle_array[:i_min][cupy.logical_not(mask_remove[:i_min]),...]
-                #right_buffer = particle_array[:i_max][cupy.logical_not(mask_remove[:i_max]),...]
-                #stay_buffer = particle_array[i_min:i_max][cupy.logical_not(mask_remove[i_min:i_max]),...]
-                split_particles_buffers[dim_grid_1d, dim_block_1d]( particle_array, mask_remove, left_buffer,
-                    stay_buffer, right_buffer, i_min, i_max )
+                left_buffer = particle_array[:i_min][cupy.logical_not(mask_remove[:i_min]),...]
+                right_buffer = particle_array[:i_max][cupy.logical_not(mask_remove[:i_max]),...]
+                stay_buffer = particle_array[i_min:i_max][cupy.logical_not(mask_remove[i_min:i_max]),...]
+                #split_particles_buffers[dim_grid_1d, dim_block_1d]( particle_array, mask_remove, left_buffer,
+                #    stay_buffer, right_buffer, i_min, i_max )
                 remove_buffer = particle_array[mask_remove,...]
                 setattr( attr_list[i_attr][0], attr_list[i_attr][1], stay_buffer )
                 if left_proc is not None:
@@ -334,11 +330,11 @@ def remove_particles_gpu(species, fld, walls, n_guard, left_proc, right_proc):
                 remove_buffer = cupy.empty((nr_remove,), dtype=np.float64)
 
                 particle_array = getattr( attr_list[i_attr][0], attr_list[i_attr][1] )
-                #left_buffer = particle_array[:i_min][cupy.logical_not(mask_remove[:i_min]),...]
-                #right_buffer = particle_array[:i_max][cupy.logical_not(mask_remove[:i_max]),...]
-                #stay_buffer = particle_array[i_min:i_max][cupy.logical_not(mask_remove[i_min:i_max]),...]
-                split_particles_buffers[dim_grid_1d, dim_block_1d]( particle_array, mask_remove, left_buffer,
-                    stay_buffer, right_buffer, i_min, i_max )
+                left_buffer = particle_array[:i_min][cupy.logical_not(mask_remove[:i_min]),...]
+                right_buffer = particle_array[:i_max][cupy.logical_not(mask_remove[:i_max]),...]
+                stay_buffer = particle_array[i_min:i_max][cupy.logical_not(mask_remove[i_min:i_max]),...]
+                #split_particles_buffers[dim_grid_1d, dim_block_1d]( particle_array, mask_remove, left_buffer,
+                #    stay_buffer, right_buffer, i_min, i_max )
                 remove_buffer = particle_array[mask_remove,...]
                 setattr( attr_list[i_attr][0], attr_list[i_attr][1], stay_buffer )
                 if left_proc is not None:
@@ -346,7 +342,10 @@ def remove_particles_gpu(species, fld, walls, n_guard, left_proc, right_proc):
                 if right_proc is not None:
                     right_buffer.get( out=uint_send_right[i_attr] )
 
-            species.sorted == False
+            if nr_remove > 0:
+                species.sort_particles(fld = fld)
+                species.sorted = True
+
             species.Ntot = new_Ntot
     else:
         # Total number of particles in each particle group
