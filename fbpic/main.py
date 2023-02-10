@@ -455,6 +455,7 @@ class Simulation(object):
                                                 self.walls,
                                                 self.time, 
                                                 self.iteration)
+
                 for antenna in self.laser_antennas:
                     antenna.update_current_rank(self.comm)
 

@@ -522,7 +522,7 @@ class ParticleDiagnostic(OpenPMDDiagnostic) :
         the rules of self.select
         """
         # Initialize an array filled with True
-        Ntot_e = species.initNtot - species.Ntot
+        Ntot_e = species.x_e.shape[0]
         select_array = np.ones( Ntot_e, dtype='bool' )
         # subsampling selector
         if self.subsampling_fraction is not None :
