@@ -16,6 +16,7 @@ if cuda_installed:
     from fbpic.utils.cuda import cuda, cuda_tpb_bpg_1d, compile_cupy
 
 
+
 def remove_outside_particles(species, fld, walls, n_guard, left_proc, right_proc):
     """
     Remove the particles that are outside of the physical domain (i.e.
@@ -250,17 +251,23 @@ def remove_particles_gpu(species, fld, walls, n_guard, left_proc, right_proc):
             mask_remove = cupy.zeros(species.Ntot, dtype=bool)
             # Get the threads per block and the blocks per grid
             dim_grid_1d, dim_block_1d = cuda_tpb_bpg_1d( species.Ntot )
-            remove_particles_outside_boundary[dim_grid_1d, dim_block_1d](
-                wall.wall_arr, wall.segments, mask_remove, species.x, species.y, species.z,
-                fld.interp[0].zmin, fld.interp[0].zmax, fld.interp[0].rmax,
-                Nz, Nr )
-            #remove_particles_polygon[dim_grid_1d, dim_block_1d]( 
-            #    wall.wall_arr, mask_remove, species.x, species.y, species.z )
+            #remove_particles_outside_boundary[dim_grid_1d, dim_block_1d](
+            #    wall.wall_arr, wall.segments, mask_remove, species.x, species.y, species.z,
+            #    fld.interp[0].zmin, fld.interp[0].zmax, fld.interp[0].rmax,
+            #    Nz, Nr )
+            remove_particles_polygon[dim_grid_1d, dim_block_1d]( 
+                wall.wall_arr, mask_remove, species.x, species.y, species.z )
 
             nr_remove = int(cupy.count_nonzero(mask_remove))
             nr_left = i_min - int(cupy.count_nonzero(mask_remove[:i_min]))
             nr_right = species.Ntot - i_max - int(cupy.count_nonzero(mask_remove[i_max:]))
             new_Ntot = species.Ntot - nr_remove - nr_left - nr_right
+            
+            print("nr_remove = ", nr_remove)
+            print("nr_left = ", nr_left)
+            print("nr_right = ", nr_right)
+            print("new_Ntot = ", new_Ntot)
+            print("i_max = ", i_max)
             
             N_send_l = nr_left
             N_send_r = nr_right
@@ -287,7 +294,7 @@ def remove_particles_gpu(species, fld, walls, n_guard, left_proc, right_proc):
                 particle_array = getattr( attr_list[i_attr][0], attr_list[i_attr][1] )
 
                 left_buffer = particle_array[:i_min][cupy.logical_not(mask_remove[:i_min]),...]
-                right_buffer = particle_array[:i_max][cupy.logical_not(mask_remove[:i_max]),...]
+                right_buffer = particle_array[i_max:][cupy.logical_not(mask_remove[i_max:]),...]
                 stay_buffer = particle_array[i_min:i_max][cupy.logical_not(mask_remove[i_min:i_max]),...]
                 remove_buffer = particle_array[mask_remove,...]
 
@@ -300,6 +307,9 @@ def remove_particles_gpu(species, fld, walls, n_guard, left_proc, right_proc):
                 if left_proc is not None:
                     left_buffer.get( out=float_send_left[i_attr] )
                 if right_proc is not None:
+                    #print(right_buffer.shape)
+                    #print(float_send_right.shape)
+                    #print(float_send_right[i_attr].shape)
                     right_buffer.get( out=float_send_right[i_attr] )
                 if nr_remove > 0 and i_attr < 7:
                     species.__dict__[attr_list[i_attr][1]+'_e'] = \
@@ -316,7 +326,7 @@ def remove_particles_gpu(species, fld, walls, n_guard, left_proc, right_proc):
                 particle_array = getattr( attr_list[i_attr][0], attr_list[i_attr][1] )
 
                 left_buffer = particle_array[:i_min][cupy.logical_not(mask_remove[:i_min]),...]
-                right_buffer = particle_array[:i_max][cupy.logical_not(mask_remove[:i_max]),...]
+                right_buffer = particle_array[i_max:][cupy.logical_not(mask_remove[i_max:]),...]
                 stay_buffer = particle_array[i_min:i_max][cupy.logical_not(mask_remove[i_min:i_max]),...]
                 remove_buffer = particle_array[mask_remove,...]
 
@@ -334,6 +344,11 @@ def remove_particles_gpu(species, fld, walls, n_guard, left_proc, right_proc):
         new_Ntot = i_max - i_min
         N_send_l = i_min
         N_send_r = species.Ntot - i_max
+
+        print("N_send_l = ", N_send_l)
+        print("N_send_r = ", N_send_r)
+        print("new_Ntot = ", new_Ntot)
+        print("i_max = ", i_max)
 
         # Allocate the sending buffers on the CPU
         n_float = species.n_float_quantities

@@ -232,20 +232,38 @@ class PEC(Wall):
         """
 
         # Calculate indices in z between which the field should be set to 0
-        zmin_global, zmax_global = comm.get_zmin_zmax( local=False,
+        zmin_global, zmax_global = comm.get_zmin_zmax( local=True,
                         with_guard=True, with_damp=True, rank=comm.rank)
+        #print("zmin_global = ", zmin_global)
+        #print("zmax_global = ", zmax_global)
+
 
         z = cupy.linspace(zmin_global, zmax_global, interp[0].Nz)
         r = cupy.linspace(0., interp[0].rmax, interp[0].Nr)
+
+        #print("interp[0].Nz = ", interp[0].Nz)
+        #print("interp[0].Nr = ", interp[0].Nr)
+        #print("interp[0].rmax = ", interp[0].rmax)
 
         for i, grid in enumerate(interp):
             if self.modes is not None:
                 if i not in self.modes:
                     continue
             
+            Er = getattr( grid, 'Er')
+            Et = getattr( grid, 'Et')
+            Ez = getattr( grid, 'Ez')
+
+            self.Er_old = Er
+            self.Et_old = Et
+            self.Ez_old = Ez
+
+            Nz_local = Er.shape[0]
+            Nr_local = Er.shape[1]
+            
             if iteration == 0:
                 self.s = cupy.empty((interp[0].Nz, interp[0].Nr), dtype=np.float64)
-                dim_grid_2d, dim_block_2d = cuda_tpb_bpg_2d(interp[0].Nz, interp[0].Nr)
+                dim_grid_2d, dim_block_2d = cuda_tpb_bpg_2d(Nz_local, Nr_local)
                 self.calculate_local_coord_syst[dim_grid_2d, dim_block_2d]( self.s, 
                     z, r, 
                     self.wall_arr,
@@ -254,20 +272,12 @@ class PEC(Wall):
                     self.normal,
                     self.tangent,
                     interp[0].rmax)
-                self.segments = cupy.zeros((interp[0].Nz, interp[0].Nr), dtype=np.int32)
+                self.segments = cupy.zeros((Nz_local, Nr_local), dtype=np.int32)
                 self.calculate_segments[dim_grid_2d, dim_block_2d]( self.segments, 
                     z, r, 
                     self.wall_arr,
                     self.upper_segment,
                     self.lower_segment)
-                    
-            Er = getattr( grid, 'Er')
-            Et = getattr( grid, 'Et')
-            Ez = getattr( grid, 'Ez')
-
-            self.Er_old = Er
-            self.Et_old = Et
-            self.Ez_old = Ez
                     
 
     def set_boundary_conditions( self, interp, comm, iteration, *args, **kwargs ):
@@ -348,14 +358,14 @@ class PEC(Wall):
                                                                         self.Ez_old, self.Er_old, self.Et_old,
                                                                         r, self.segments, interp[0].rmax)
 
-                if iteration % 500 == 0:
-                    self.complexDTVFilter(Ez, 9, 1, z, r, self.segments, self.normal)
-                    self.complexDTVFilter(Er, 9, 1, z, r, self.segments, self.normal)
-                    self.complexDTVFilter(Et, 9, 1, z, r, self.segments, self.normal)
+                #if iteration % 500 == 0:
+                #    self.complexDTVFilter(Ez, 9, 1, z, r, self.segments, self.normal)
+                #    self.complexDTVFilter(Er, 9, 1, z, r, self.segments, self.normal)
+                #    self.complexDTVFilter(Et, 9, 1, z, r, self.segments, self.normal)
                 
-                self.laplacian_smoothing[dim_grid_2d, dim_block_2d](Ez, self.segments)
-                self.laplacian_smoothing[dim_grid_2d, dim_block_2d](Er, self.segments)
-                self.laplacian_smoothing[dim_grid_2d, dim_block_2d](Et, self.segments)
+                #self.laplacian_smoothing[dim_grid_2d, dim_block_2d](Ez, self.segments)
+                #self.laplacian_smoothing[dim_grid_2d, dim_block_2d](Er, self.segments)
+                #self.laplacian_smoothing[dim_grid_2d, dim_block_2d](Et, self.segments)
 
                 
     @compile_cupy
