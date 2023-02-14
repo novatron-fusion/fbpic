@@ -139,6 +139,7 @@ class ExternalField( object ):
                     return field_func(F, x, y, zlab, tlab, amplitude, length_scale)
             else:
                 func = field_func
+            self.field_func = field_func
 
             # Compile the field_func for cpu and gpu
             signature = [ float64( float64, float64, float64,
@@ -292,21 +293,20 @@ class ExternalField( object ):
                         continue
                     else:
                         field = getattr( species, fieldtype )
-                        if type( self.field_func_d ) is cupy.ndarray:
-                            dim_grid_1d, dim_block_1d = cuda_tpb_bpg_1d( species.Ntot )
-                            self.grid_data_bilinear_interp[dim_grid_1d, dim_block_1d]( 
-                                field, self.field_func_d,
-                                species.x, species.y, species.z,
-                                self.dz, self.dr, self.Nz, self.Nr,
-                                comm._zmin_global_domain )
+                        if type( field ) is np.ndarray:
+                            # Call the CPU function
+                            self.cpu_func( field, species.x, species.y, species.z,
+                                t, amplitude, self.length_scale, out=field )
                         else:
-                            if type( field ) is np.ndarray:
-                                # Call the CPU function
-                                self.cpu_func( field, species.x, species.y, species.z,
-                                    t, amplitude, self.length_scale, out=field )
+                            # Get the threads per block and the blocks per grid
+                            dim_grid_1d, dim_block_1d = cuda_tpb_bpg_1d( species.Ntot )
+                            if type( self.field_func ) is np.ndarray:
+                                self.grid_data_bilinear_interp[dim_grid_1d, dim_block_1d]( 
+                                    field, self.field_func_d,
+                                    species.x, species.y, species.z,
+                                    self.dz, self.dr, self.Nz, self.Nr,
+                                    comm._zmin_global_domain )
                             else:
-                                # Get the threads per block and the blocks per grid
-                                dim_grid_1d, dim_block_1d = cuda_tpb_bpg_1d( species.Ntot )
                                 # Call the GPU kernel
                                 self.gpu_func[dim_grid_1d, dim_block_1d](
                                     field, species.x, species.y, species.z,

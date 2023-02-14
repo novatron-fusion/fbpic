@@ -455,10 +455,6 @@ class Simulation(object):
                                                 self.walls,
                                                 self.time, 
                                                 self.iteration)
-                    
-                if species.sorted == False:
-                    species.sort_particles(fld = fld)
-                    species.sorted = True
 
                 for antenna in self.laser_antennas:
                     antenna.update_current_rank(self.comm)

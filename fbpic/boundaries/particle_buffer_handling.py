@@ -261,13 +261,13 @@ def remove_particles_gpu(species, fld, walls, n_guard, left_proc, right_proc):
             nr_left = i_min - int(cupy.count_nonzero(mask_remove[:i_min]))
             nr_right = species.Ntot - i_max - int(cupy.count_nonzero(mask_remove[i_max:]))
             new_Ntot = species.Ntot - nr_remove - nr_left - nr_right
-            
+            """"
             print("nr_remove = ", nr_remove)
             print("nr_left = ", nr_left)
             print("nr_right = ", nr_right)
             print("new_Ntot = ", new_Ntot)
             print("i_max = ", i_max)
-            
+            """
             N_send_l = nr_left
             N_send_r = nr_right
 
