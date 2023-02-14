@@ -6,7 +6,7 @@ This file is part of the Fourier-Bessel Particle-In-Cell code (FB-PIC)
 It defines the structure necessary to handle mpi buffers for the particles
 """
 import numpy as np
-import math as m
+import math
 import numba
 # Check if CUDA is available, then import CUDA functions
 from fbpic.utils.cuda import cuda_installed
@@ -14,7 +14,6 @@ from fbpic.utils.printing import catch_gpu_memory_error
 if cuda_installed:
     import cupy
     from fbpic.utils.cuda import cuda, cuda_tpb_bpg_1d, compile_cupy
-
 
 
 def remove_outside_particles(species, fld, walls, n_guard, left_proc, right_proc):
@@ -814,7 +813,7 @@ if cuda_installed:
             zj = z[i]
 
             # Cylindrical conversion
-            rj = m.sqrt( xj**2 + yj**2 )
+            rj = math.sqrt( xj**2 + yj**2 )
 
             invdz = Nz / (zmax - zmin)
             invdr = Nr / rmax
@@ -824,9 +823,9 @@ if cuda_installed:
             r_cell =  invdr*(rj - 0) - 0.5
             z_cell =  invdz*(zj - zmin) - 0.5
             # Original index of the uppper and lower cell
-            ir_lower = int(m.floor( r_cell ))
+            ir_lower = int(math.floor( r_cell ))
             ir_upper = ir_lower + 1
-            iz_lower = int(m.floor( z_cell ))
+            iz_lower = int(math.floor( z_cell ))
             iz_upper = iz_lower + 1
 
             if ir_lower > Nr-1 or ir_upper > Nr-1:
@@ -873,7 +872,7 @@ if cuda_installed:
         """
         i = cuda.grid(1)
         if i < x.shape[0]:
-            r = m.sqrt(x[i]**2 + y[i]**2)
+            r = math.sqrt(x[i]**2 + y[i]**2)
 
             in_poly = ray_casting(z[i], r, wall_arr)
             if not in_poly:

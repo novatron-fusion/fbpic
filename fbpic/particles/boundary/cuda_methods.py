@@ -27,10 +27,6 @@ def reflect_particles_left( zmin, z, ux, uy, uz, q ):
     i = cuda.grid(1)
     if i < z.shape[0]:
         if z[i] < 0.:
-            #if q > 0:
-            #    ux[i] *= 1.05
-            #    uy[i] *= 1.05
-            #    uz[i] *= 1.025
             uz[i] *= -1
             z[i] = ( zmin - z[i] ) + zmin
 

@@ -179,7 +179,6 @@ class Particles(object) :
 
         # Register the properties of the particles
         # (Necessary for the pusher, and when adding more particles later, )
-        self.initNtot = Ntot
         self.Ntot = Ntot
         self.q = q
         self.m = m

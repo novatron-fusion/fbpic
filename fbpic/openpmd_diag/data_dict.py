@@ -36,7 +36,7 @@ macro_weighted_dict = {
     "charge": np.uint32(0),
     "mass": np.uint32(0),
     "weighting": np.uint32(1),
-    "EscapedWeighting": np.uint32(0),
+    "EscapedWeighting": np.uint32(1),
     "position": np.uint32(0),
     "positionOffset": np.uint32(0),
     "EscapedPosition": np.uint32(0),

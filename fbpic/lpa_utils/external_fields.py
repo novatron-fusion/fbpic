@@ -6,7 +6,7 @@ from scipy.constants import c
 inv_c = 1./c
 import numpy as np
 import cupy
-import math as m
+import math
 # Check if CUDA is available, then import CUDA functions
 from fbpic.utils.cuda import cuda_installed
 if cuda_installed:
@@ -17,8 +17,7 @@ class ExternalField( object ):
 
     def __init__(self, field_func, fieldtype, amplitude,
                  length_scale, species=None, gamma_boost=None,
-                 Nz=None, Nr=None,
-                 dz=None, dr=None ):
+                 Nz=None, Nr=None, dz=None, dr=None ):
         """
         Initialize an ExternalField object, so that the function
         `field_func` is called at each time step on the field `fieldtype`
@@ -189,7 +188,7 @@ class ExternalField( object ):
     def transform_cyl_to_cart_cuda( Fx, Fy, Fr, Ft, x, y ):
         i = cuda.grid(1)
         if i < Fx.shape[0]:
-            r = m.sqrt(x[i]**2 + y[i]**2)
+            r = math.sqrt(x[i]**2 + y[i]**2)
             if r > 0.:
                 Fx[i] += Fr[i] * x[i] / r - Ft[i] * y[i] / r
                 Fy[i] += Fr[i] * y[i] / r + Ft[i] * x[i] / r
@@ -199,9 +198,9 @@ class ExternalField( object ):
     def grid_data_bilinear_interp( F, field, x, y, z, dz, dr, Nz, Nr, zmin):
         i = cuda.grid(1)
         if i < F.shape[0]:
-            r = m.sqrt(x[i]**2 + y[i]**2)
-            zi_min = m.floor((z[i] - zmin)  / dz)
-            ri_min = m.floor(r / dr)
+            r = math.sqrt(x[i]**2 + y[i]**2)
+            zi_min = math.floor((z[i] - zmin)  / dz)
+            ri_min = math.floor(r / dr)
 
             if zi_min >= Nz-1:
                 zi_min = Nz-2

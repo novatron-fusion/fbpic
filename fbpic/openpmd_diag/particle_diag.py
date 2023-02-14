@@ -132,8 +132,6 @@ class ParticleDiagnostic(OpenPMDDiagnostic) :
                     self.array_quantities_dict[species_name] += ['Bx','By','Bz']
                 elif quantity == "weighting":
                     self.array_quantities_dict[species_name].append('w')
-                #else:
-                #    self.array_quantities_dict[species_name].append(quantity)
                     
             # For tracked particles, the id is automatically added
             if species.tracker is not None:

@@ -482,7 +482,6 @@ def cuda_push_rho( rho_prev, rho_next, Nz, Nr ) :
 
 @compile_cupy
 def cuda_filter_scalar( field, Nz, Nr, filter_array_z, filter_array_r ):
-#                        z, r, wall_array, segment ) :
     """
     Multiply the input field by the filter_array
 
@@ -504,21 +503,10 @@ def cuda_filter_scalar( field, Nz, Nr, filter_array_z, filter_array_r ):
     # Filter the field
     if (iz < Nz) and (ir < Nr) :
         field[iz, ir] = filter_array_z[iz]*filter_array_r[ir]*field[iz, ir]
-        """
-        in_poly = ray_casting(z[iz], r[ir], wall_array)
-        if in_poly:
-            n = len(wall_array)
-            for k in range(n-1):
-                in_segment = ray_casting(z[iz], r[ir], segment[k])
-                if in_segment:
-                    field[iz, ir] = filter_array_z[iz]*filter_array_r[ir]*field[iz, ir]
-                    break
-        """
 
 @compile_cupy
 def cuda_filter_vector( fieldr, fieldt, fieldz, Nz, Nr,
                         filter_array_z, filter_array_r ):
- #                       z, r, wall_array, segment ):
     """
     Multiply the input field by the filter_array
 
@@ -542,15 +530,3 @@ def cuda_filter_vector( fieldr, fieldt, fieldz, Nz, Nr,
         fieldr[iz, ir] = filter_array_z[iz]*filter_array_r[ir]*fieldr[iz, ir]
         fieldt[iz, ir] = filter_array_z[iz]*filter_array_r[ir]*fieldt[iz, ir]
         fieldz[iz, ir] = filter_array_z[iz]*filter_array_r[ir]*fieldz[iz, ir]
-        """
-        in_poly = ray_casting(z[iz], r[ir], wall_array)
-        if in_poly:
-            n = len(wall_array)
-            for k in range(n-1):
-                in_segment = ray_casting(z[iz], r[ir], segment[k])
-                if in_segment:
-                    fieldr[iz, ir] = filter_array_z[iz]*filter_array_r[ir]*fieldr[iz, ir]
-                    fieldt[iz, ir] = filter_array_z[iz]*filter_array_r[ir]*fieldt[iz, ir]
-                    fieldz[iz, ir] = filter_array_z[iz]*filter_array_r[ir]*fieldz[iz, ir]
-                    break
-        """
