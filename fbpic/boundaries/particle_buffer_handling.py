@@ -206,46 +206,34 @@ def remove_particles_gpu(species, fld, walls, n_guard, left_proc, right_proc):
         proc and right proc respectively, and where n_float and n_int
         are the number of float and integer quantities respectively
     """
-    # Check if particles are sorted
-    # (The particles are usually expected to be sorted from the previous
-    # iteration at this point - except at the first iteration of `step`.)
-    if species.sorted == False:
-        species.sort_particles(fld = fld)
-        species.sorted = True
-
-    # Get the particle indices between which to remove the particles
-    # (Take into account the fact that the moving window may have
-    # shifted the grid since the particles were last sorted: prefix_sum_shift)
-    prefix_sum = species.prefix_sum
-    Nz = fld.Nz
-    Nr = fld.Nr
-    # Find the z index of the first cell for which particles are kept
-    iz_min = max( n_guard + species.prefix_sum_shift, 0 )
-    # Find the z index of the first cell for which particles are removed again
-    iz_max = min( Nz - n_guard + species.prefix_sum_shift + 1, Nz )
-    # Find the corresponding indices in the particle array
-    # Reminder: prefix_sum[i] is the cumulative sum of the number of particles
-    # in cells 0 to i (where cell i is included)
-    if iz_min*(Nr+1) - 1 >= 0:
-        i_min = int(prefix_sum[ iz_min*(Nr+1) - 1 ])
-    else:
-        i_min = 0
-    """
-    print(prefix_sum.shape)
-    print(Nr)
-    print(iz_max)
-    print(iz_max*(Nr+1) - 1)
-    """
-    i_max = int(prefix_sum[ iz_max*(Nr+1) - 1 ])
-
 
     if walls:
         for wall in walls:
-            attr_list = [ (species,'x'), (species,'y'), (species,'z'),
-                (species,'ux'), (species,'uy'), (species,'uz'),
-                (species,'w'), (species,'inv_gamma') ]
-            if species.ionizer is not None:
-                attr_list.append( (species.ionizer,'w_times_level') )
+            # Check if particles are sorted
+            # (The particles are usually expected to be sorted from the previous
+            # iteration at this point - except at the first iteration of `step`.)
+            if species.sorted == False:
+                species.sort_particles(fld = fld)
+                species.sorted = True
+
+            # Get the particle indices between which to remove the particles
+            # (Take into account the fact that the moving window may have
+            # shifted the grid since the particles were last sorted: prefix_sum_shift)
+            prefix_sum = species.prefix_sum
+            Nz = fld.Nz
+            Nr = fld.Nr
+            # Find the z index of the first cell for which particles are kept
+            iz_min = max( n_guard + species.prefix_sum_shift, 0 )
+            # Find the z index of the first cell for which particles are removed again
+            iz_max = min( Nz - n_guard + species.prefix_sum_shift + 1, Nz )
+            # Find the corresponding indices in the particle array
+            # Reminder: prefix_sum[i] is the cumulative sum of the number of particles
+            # in cells 0 to i (where cell i is included)
+            if iz_min*(Nr+1) - 1 >= 0:
+                i_min = int(prefix_sum[ iz_min*(Nr+1) - 1 ])
+            else:
+                i_min = 0
+            i_max = int(prefix_sum[ iz_max*(Nr+1) - 1 ])
         
             mask_remove = cupy.zeros(species.Ntot, dtype=bool)
             # Get the threads per block and the blocks per grid
@@ -261,20 +249,19 @@ def remove_particles_gpu(species, fld, walls, n_guard, left_proc, right_proc):
             nr_left = i_min - int(cupy.count_nonzero(mask_remove[:i_min]))
             nr_right = species.Ntot - i_max - int(cupy.count_nonzero(mask_remove[i_max:]))
             new_Ntot = species.Ntot - nr_remove - nr_left - nr_right
-            """"
-            print("nr_remove = ", nr_remove)
-            print("nr_left = ", nr_left)
-            print("nr_right = ", nr_right)
-            print("new_Ntot = ", new_Ntot)
-            print("i_max = ", i_max)
-            """
+
+            #print("nr_remove = ", nr_remove)
+            #print("nr_left = ", nr_left)
+            #print("nr_right = ", nr_right)
+            #print("new_Ntot = ", new_Ntot)
+            #print("i_max = ", i_max)
+
             N_send_l = nr_left
             N_send_r = nr_right
 
             # Allocate the sending buffers on the CPU
             n_float = species.n_float_quantities
             n_int = species.n_integer_quantities
-
             if left_proc is not None:
                 float_send_left = np.empty((n_float, N_send_l), dtype=np.float64)
                 uint_send_left = np.empty((n_int, N_send_l), dtype=np.uint64)
@@ -287,7 +274,16 @@ def remove_particles_gpu(species, fld, walls, n_guard, left_proc, right_proc):
             else:
                 float_send_right = np.empty((n_float, 0), dtype=np.float64)
                 uint_send_right = np.empty((n_int, 0), dtype=np.uint64)
-            
+
+            # Get the threads per block and the blocks per grid
+            dim_grid_1d, dim_block_1d = cuda_tpb_bpg_1d( species.Ntot )
+            # Float quantities:
+            # Build list of float attributes to copy
+            attr_list = [ (species,'x'), (species,'y'), (species,'z'),
+                            (species,'ux'), (species,'uy'), (species,'uz'),
+                            (species,'inv_gamma'), (species,'w') ]
+            if species.ionizer is not None:
+                attr_list.append( (species.ionizer,'w_times_level') )
             # Loop through the float attributes
             for i_attr in range(n_float):
                 particle_array = getattr( attr_list[i_attr][0], attr_list[i_attr][1] )
@@ -310,7 +306,7 @@ def remove_particles_gpu(species, fld, walls, n_guard, left_proc, right_proc):
                     #print(float_send_right.shape)
                     #print(float_send_right[i_attr].shape)
                     right_buffer.get( out=float_send_right[i_attr] )
-                if nr_remove > 0 and i_attr < 7:
+                if nr_remove > 0 and i_attr < 8:
                     species.__dict__[attr_list[i_attr][1]+'_e'] = \
                         cupy.append(species.__dict__[attr_list[i_attr][1]+'_e'], remove_buffer)
 
@@ -339,20 +335,40 @@ def remove_particles_gpu(species, fld, walls, n_guard, left_proc, right_proc):
                 species.sorted = False
             species.Ntot = new_Ntot
     else:
-        # Total number of particles in each particle group
-        new_Ntot = i_max - i_min
-        N_send_l = i_min
-        N_send_r = species.Ntot - i_max
+        # Check if particles are sorted
+        # (The particles are usually expected to be sorted from the previous
+        # iteration at this point - except at the first iteration of `step`.)
+        if species.sorted == False:
+            species.sort_particles(fld = fld)
+            species.sorted = True
 
-        print("N_send_l = ", N_send_l)
-        print("N_send_r = ", N_send_r)
-        print("new_Ntot = ", new_Ntot)
-        print("i_max = ", i_max)
+        # Get the particle indices between which to remove the particles
+        # (Take into account the fact that the moving window may have
+        # shifted the grid since the particles were last sorted: prefix_sum_shift)
+        prefix_sum = species.prefix_sum
+        Nz = fld.Nz
+        Nr = fld.Nr
+        # Find the z index of the first cell for which particles are kept
+        iz_min = max( n_guard + species.prefix_sum_shift, 0 )
+        # Find the z index of the first cell for which particles are removed again
+        iz_max = min( Nz - n_guard + species.prefix_sum_shift + 1, Nz )
+        # Find the corresponding indices in the particle array
+        # Reminder: prefix_sum[i] is the cumulative sum of the number of particles
+        # in cells 0 to i (where cell i is included)
+        if iz_min*(Nr+1) - 1 >= 0:
+            i_min = int(prefix_sum[ iz_min*(Nr+1) - 1 ])
+        else:
+            i_min = 0
+        i_max = int(prefix_sum[ iz_max*(Nr+1) - 1 ])
+
+        # Total number of particles in each particle group
+        N_send_l = i_min
+        new_Ntot = i_max - i_min
+        N_send_r = species.Ntot - i_max
 
         # Allocate the sending buffers on the CPU
         n_float = species.n_float_quantities
         n_int = species.n_integer_quantities
-
         if left_proc is not None:
             float_send_left = np.empty((n_float, N_send_l), dtype=np.float64)
             uint_send_left = np.empty((n_int, N_send_l), dtype=np.uint64)
@@ -372,7 +388,7 @@ def remove_particles_gpu(species, fld, walls, n_guard, left_proc, right_proc):
         # Build list of float attributes to copy
         attr_list = [ (species,'x'), (species,'y'), (species,'z'),
                         (species,'ux'), (species,'uy'), (species,'uz'),
-                        (species,'w'), (species,'inv_gamma') ]
+                        (species,'inv_gamma'), (species,'w') ]
         if species.ionizer is not None:
             attr_list.append( (species.ionizer,'w_times_level') )
         # Loop through the float attributes
@@ -386,12 +402,11 @@ def remove_particles_gpu(species, fld, walls, n_guard, left_proc, right_proc):
             # (safeguard against automatic memory management)
             assert type(left_buffer) != np.ndarray
             assert type(right_buffer) != np.ndarray
-            assert type(stay_buffer) != np.ndarray
+            assert type(left_buffer) != np.ndarray
             # Split the particle array into the 3 buffers on the GPU
             particle_array = getattr( attr_list[i_attr][0], attr_list[i_attr][1] )
             split_particles_to_buffers[dim_grid_1d, dim_block_1d]( particle_array,
                         left_buffer, stay_buffer, right_buffer, i_min, i_max)
-
             # Assign the stay_buffer to the initial particle data array
             # and fill the sending buffers (if needed for MPI)
             setattr( attr_list[i_attr][0], attr_list[i_attr][1], stay_buffer)
@@ -419,7 +434,7 @@ def remove_particles_gpu(species, fld, walls, n_guard, left_proc, right_proc):
                 left_buffer, stay_buffer, right_buffer, i_min, i_max)
             # Assign the stay_buffer to the initial particle data array
             # and fill the sending buffers (if needed for MPI)
-            setattr( attr_list[i_attr][0], attr_list[i_attr][1], stay_buffer )
+            setattr( attr_list[i_attr][0], attr_list[i_attr][1], stay_buffer)
             if left_proc is not None:
                 left_buffer.get( out=uint_send_left[i_attr] )
             if right_proc is not None:

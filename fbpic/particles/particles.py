@@ -210,6 +210,7 @@ class Particles(object) :
         self.ux_e = []
         self.uy_e = []
         self.uz_e = []
+        self.inv_gamma_e = []
         self.w_e = []
 
         # The particle injector stores information that is useful in order
@@ -311,6 +312,7 @@ class Particles(object) :
             self.ux_e = cupy.asarray(self.ux_e)
             self.uy_e = cupy.asarray(self.uy_e)
             self.uz_e = cupy.asarray(self.uz_e)
+            self.inv_gamma_e = cupy.asarray(self.inv_gamma_e)
             self.w_e = cupy.asarray(self.w_e)
 
             # Copy sorting buffers on the GPU
