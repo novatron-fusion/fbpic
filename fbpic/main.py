@@ -847,7 +847,8 @@ class Simulation(object):
                             uz_th=0., ux_th=0., uy_th=0.,
                             continuous_injection=True,
                             boost_positions_in_dens_func=False,
-                            particle_boundaries={'zmin':'open', 'zmax':'open'} ):
+                            particle_boundaries={'zmin':'open', 'zmax':'open'},
+                            initial_particle_generator=None ):
         """
         Create a new species (i.e. an instance of `Particles`) with
         charge `q` and mass `m`. Add it to the simulation (i.e. to the list
@@ -1041,7 +1042,8 @@ class Simulation(object):
                         ux_th=ux_th, uy_th=uy_th, uz_th=uz_th,
                         continuous_injection=continuous_injection,
                         dz_particles=dz_particles,
-                        particle_boundaries=particle_boundaries)
+                        particle_boundaries=particle_boundaries,
+                        initial_particle_generator=initial_particle_generator )
 
         # Add it to the list of species and return it to the user
         self.ptcl.append( new_species )

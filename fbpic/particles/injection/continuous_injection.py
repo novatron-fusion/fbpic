@@ -352,6 +352,20 @@ def unalign_angles( thetap, Npz, Npr, method='irrational' ) :
     # in r and z have the same shift
     thetap[:,:,:] = thetap[:,:,:] + angle_shift[:,:, np.newaxis]
 
+def verify_generated_particles(Ntot, x, y, z, ux, uy, uz, inv_gamma, w):
+    """Check that the generated particles are a consistent set"""
+    assert len(x) == Ntot
+    assert len(y) == Ntot
+    assert len(z) == Ntot
+    assert len(ux) == Ntot
+    assert len(uy) == Ntot
+    assert len(uz) == Ntot
+    assert len(inv_gamma) == Ntot
+    assert len(w) == Ntot
+    assert np.all(w >= 0)
+    assert np.all(np.abs(inv_gamma * np.sqrt( 1 + ux**2 + uy**2 + uz**2 ) - 1 ) < 1e-5)
+    
+
 
 def _check_dens_func_arguments(dens_func):
     """
