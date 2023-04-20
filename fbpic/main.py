@@ -56,6 +56,7 @@ class Simulation(object):
                  initialize_ions=False, use_cuda=False, n_guard=None,
                  n_damp={'z':64, 'r':32},
                  exchange_period=None,
+                 injection={'p':None, 't':np.inf},
                  current_correction='curl-free',
                  boundaries={'z':'periodic', 'r':'reflective'},
                  gamma_boost=None, use_all_mpi_ranks=True,
@@ -164,6 +165,13 @@ class Simulation(object):
             particles should never be able to travel more than
             (n_guard/2 - particle_shape order) cells. (Setting exchange_period
             to small values can substantially affect the performance)
+
+        injection: dict, optional
+            A dictionary with 'p' and 't' as keys with int and float as values,
+            respectively. This specifies the injection period (multiple of 
+            exchange period) and the duration of injection. When set this
+            will inject particles with user-defined density function and duration
+            in a moving window with v=0.
 
         boundaries: dict, optional
             A dictionary with 'z' and 'r' as keys, and strings as values.
@@ -286,7 +294,7 @@ class Simulation(object):
         self.comm = BoundaryCommunicator( Nz, zmin, zmax, Nr, rmax, Nm, dt,
             self.v_comoving, self.use_galilean, boundaries, n_order,
             n_guard, n_damp, cdt_over_dr, None, exchange_period,
-            use_all_mpi_ranks )
+            injection, use_all_mpi_ranks )
         self.use_pml = self.comm.use_pml
         # Modify domain region
         zmin, zmax, Nz = self.comm.divide_into_domain()
@@ -337,8 +345,10 @@ class Simulation(object):
         self.checkpoints = []
         # Initialize an empty list of laser antennas
         self.laser_antennas = []
-        # Initialize an empty list of mirrors
-        self.mirrors = []
+        # Initialize an empty list of walls
+        self.walls = []
+        # Initialize an empty list of collisions
+        self.collisions = []
 
         # Print simulation setup
         print_simulation_setup( self, verbose_level=verbose_level )
@@ -397,7 +407,7 @@ class Simulation(object):
         # Initialize variables to measure the time taken by the simulation
         if show_progress and self.comm.rank==0:
             progress_bar = ProgressBar( N )
-
+        
         # Send simulation data to GPU (if CUDA is used)
         if self.use_cuda:
             send_data_to_gpu(self)
@@ -414,9 +424,11 @@ class Simulation(object):
             fld.interp2spect('E_pml')
             fld.interp2spect('B_pml')
 
+        for walls in self.walls:
+            walls.create_wall( fld.interp, self.comm, self.iteration )
+
         # Beginning of the N iterations
         # -----------------------------
-
         # Loop over timesteps
         for i_step in range(N):
 
@@ -439,7 +451,11 @@ class Simulation(object):
                 # (In the case of single-proc periodic simulations, particles
                 # are shifted by one box length, so they remain inside the box)
                 for species in self.ptcl:
-                    self.comm.exchange_particles(species, fld, self.time)
+                    self.comm.exchange_particles(species, fld,
+                                                self.walls,
+                                                self.time, 
+                                                self.iteration)
+
                 for antenna in self.laser_antennas:
                     antenna.update_current_rank(self.comm)
 
@@ -461,6 +477,21 @@ class Simulation(object):
             # Main PIC iteration
             # ------------------
 
+            # Handle collisions
+            for collision in self.collisions:
+                if self.iteration % collision.period == 0 \
+                    and self.iteration >= collision.start:
+                    collision.handle_collisions( fld, dt )
+
+            
+            # Increase density at user-defined intervals
+            if self.comm.injection['p'] is not None:
+                if self.iteration % self.comm.injection['p'] == 0 \
+                    and self.time <= self.comm.injection['t'] \
+                    and self.iteration > 0:
+                    for species in ptcl:
+                        species.w *= 1.01
+
             # Keep field arrays sorted throughout gathering+push
             for species in ptcl:
                 species.keep_fields_sorted = True
@@ -470,7 +501,7 @@ class Simulation(object):
                 species.gather( fld.interp, self.comm )
             # Apply the external fields at t = n dt
             for ext_field in self.external_fields:
-                ext_field.apply_expression( self.ptcl, self.time )
+                ext_field.apply_expression( self.ptcl, self.time, self.comm )
 
             # Run the diagnostics
             # (after gathering ; allows output of gathered fields on particles)
@@ -492,6 +523,7 @@ class Simulation(object):
             for antenna in self.laser_antennas:
                 antenna.update_v( self.time + 0.5*dt )
                 antenna.push_x( 0.5*dt )
+
             # Shift the boundaries of the grid for the Galilean frame
             if self.use_galilean:
                 self.shift_galilean_boundaries( 0.5*dt )
@@ -501,6 +533,11 @@ class Simulation(object):
             # (e.g. ionization, Compton scattering, ...)
             for species in ptcl:
                 species.handle_elementary_processes( self.time + 0.5*dt )
+
+            # Handle particle boundaries
+            # e.g. reflection or bounce 
+            for species in ptcl:
+                species.handle_particle_boundaries()
 
             # Fields are not used beyond this point ; no need to keep sorted
             for species in ptcl:
@@ -520,6 +557,12 @@ class Simulation(object):
             # Get positions for antenna particles at t = (n+1) dt
             for antenna in self.laser_antennas:
                 antenna.push_x( 0.5*dt )
+
+            # Handle particle boundaries
+            # e.g. reflection or bounce 
+            for species in ptcl:
+                species.handle_particle_boundaries()
+                
             # Shift the boundaries of the grid for the Galilean frame
             if self.use_galilean:
                 self.shift_galilean_boundaries( 0.5*dt )
@@ -537,11 +580,12 @@ class Simulation(object):
                     self.comm.exchange_fields(fld.interp, 'J', 'add')
                     fld.partial_interp2spect('J')
                 fld.exchanged_source['J'] = True
-
+                
             # Push the fields E and B on the spectral grid to t = (n+1) dt
             fld.push( use_true_rho, check_exchanges=(self.comm.size > 1) )
             if correct_divE:
                 fld.correct_divE()
+
             # Move the grids if needed
             if self.comm.moving_win is not None:
                 # Shift the fields is spectral space and update positions of
@@ -737,8 +781,10 @@ class Simulation(object):
         else:
             # Exchange/damp operation is purely along z; spectral fields
             # are updated by doing an iFFT/FFT instead of a full transform
-            fld.spect2partial_interp('E')
-            fld.spect2partial_interp('B')
+            fld.spect2interp('E')
+            fld.spect2interp('B')
+            #fld.spect2partial_interp('E')
+            #fld.spect2partial_interp('B')
 
         # - Exchange guard cells and damp fields
         self.comm.exchange_fields(fld.interp, 'E', 'replace')
@@ -746,10 +792,11 @@ class Simulation(object):
         self.comm.damp_EB_open_boundary( fld.interp ) # Damp along z
         if self.use_pml:
             self.comm.damp_pml_EB( fld.interp ) # Damp in radial PML
-
-        # - Set fields to 0 at the position of the mirrors
-        for mirror in self.mirrors:
-            mirror.set_fields_to_zero( fld.interp, self.comm, self.time )
+        
+        # - Wall boundary condition
+        for walls in self.walls:
+            walls.set_boundary_conditions( interp=fld.interp, comm=self.comm, 
+                                        iteration=self.iteration, t_boost=self.time )
 
         # - Update spectral space (and interpolation space if needed)
         if self.use_pml:
@@ -761,12 +808,13 @@ class Simulation(object):
         else:
             # Exchange/damp operation is purely along z; spectral fields
             # are updated by doing an iFFT/FFT instead of a full transform
-            fld.partial_interp2spect('E')
-            fld.partial_interp2spect('B')
+            #fld.partial_interp2spect('E')
+            #fld.partial_interp2spect('B')
+            fld.interp2spect('E')
+            fld.interp2spect('B')
             # Get the corresponding fields in interpolation space
             fld.spect2interp('E')
             fld.spect2interp('B')
-
 
     def shift_galilean_boundaries(self, dt):
         """
@@ -795,7 +843,8 @@ class Simulation(object):
                             uz_m=0., ux_m=0., uy_m=0.,
                             uz_th=0., ux_th=0., uy_th=0.,
                             continuous_injection=True,
-                            boost_positions_in_dens_func=False ):
+                            boost_positions_in_dens_func=False,
+                            particle_boundaries={'zmin':'open', 'zmax':'open'} ):
         """
         Create a new species (i.e. an instance of `Particles`) with
         charge `q` and mass `m`. Add it to the simulation (i.e. to the list
@@ -988,7 +1037,8 @@ class Simulation(object):
                         ux_m=ux_m, uy_m=uy_m, uz_m=uz_m,
                         ux_th=ux_th, uy_th=uy_th, uz_th=uz_th,
                         continuous_injection=continuous_injection,
-                        dz_particles=dz_particles )
+                        dz_particles=dz_particles,
+                        particle_boundaries=particle_boundaries)
 
         # Add it to the list of species and return it to the user
         self.ptcl.append( new_species )

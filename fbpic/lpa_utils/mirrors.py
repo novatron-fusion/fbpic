@@ -16,7 +16,7 @@ class Mirror(object):
         Initialize a mirror.
 
         The mirror reflects the fields in the z direction, by setting the
-        specified field modes to 0 in a thin slice orthogonal to z, at each timestep.s
+        specified field modes to 0 in a thin slice orthogonal to z, at each timestep.
         By default, all modes are zeroed.
 
         Parameters

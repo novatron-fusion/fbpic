@@ -7,6 +7,7 @@ It defines the structure necessary to implement the boundary exchanges.
 """
 import warnings
 import numpy as np
+import math as m
 from scipy.constants import c
 from fbpic.utils.mpi import comm, mpi_type_dict, \
     mpi_installed, gpudirect_enabled
@@ -21,9 +22,27 @@ from .particle_buffer_handling import remove_outside_particles, \
 from fbpic.utils.cuda import cuda_installed
 if cuda_installed:
     import cupy
-    from fbpic.utils.cuda import cuda, cuda_tpb_bpg_2d
+    from fbpic.utils.cuda import cuda, cuda_tpb_bpg_2d, cuda_tpb_bpg_1d,compile_cupy
     from .cuda_methods import cuda_damp_EB_left, cuda_damp_EB_right, \
                                 cuda_damp_EB_left_pml, cuda_damp_EB_right_pml
+                    
+
+if cuda_installed:
+    @cuda.jit( device=True, inline=True )
+    def ray_casting(x, y, polygon):
+        n = len(polygon)
+        count = 0
+        for i in range(n-1):
+            x1 = polygon[i][0]
+            x2 = polygon[i+1][0]
+            y1 = polygon[i][1]
+            y2 = polygon[i+1][1]
+
+            if (y < y1) != (y < y2) \
+                and x < (x2-x1) * (y-y1) / (y2-y1) + x1:
+                count += 1
+            
+        return(False if count % 2 == 0 else True)
 
 class BoundaryCommunicator(object):
     """
@@ -51,7 +70,7 @@ class BoundaryCommunicator(object):
     def __init__( self, Nz, zmin, zmax, Nr, rmax, Nm, dt, v_comoving,
             use_galilean, boundaries, n_order, n_guard, n_damp,
             cdt_over_dr, n_inject=None, exchange_period=None,
-            use_all_mpi_ranks=True):
+            injection={'p':None, 't':np.inf}, use_all_mpi_ranks=True):
         """
         Initializes a communicator object.
 
@@ -142,6 +161,13 @@ class BoundaryCommunicator(object):
             particles should never be able to travel more than
             (n_guard/2 - particle_shape order) cells. (Setting exchange_period
             to small values can substantially affect the performance)
+
+        injection: dict, optional
+            A dictionary with 'p' and 't' as keys with int and float as values,
+            respectively. This specifies the injection period (multiple of 
+            exchange period) and the duration of injection. When set this
+            will inject particles with user-defined density function and duration
+            in a moving window with v=0.
 
         use_all_mpi_ranks: bool, optional
             - if `use_all_mpi_ranks` is True (default):
@@ -286,8 +312,8 @@ class BoundaryCommunicator(object):
             # Maximum number of timesteps before a particle can reach the end
             # of the half of guard region including the maximum number of cells
             # (+/-3) it can affect with a "cubic" particle shape_factor.
-            # (Particles are only allowed to reside in half of the guard
-            # region as this is the stencil reach of the current correction)
+            # (Particles are only allowed to reside in half of the guard region 
+            # as this is the stencil reach of the current correction)
             self.exchange_period = int(((self.n_guard/2)-3)/cells_per_step)
             # Set exchange_period to 1 in the case of single-proc
             # and periodic boundary conditions.
@@ -302,6 +328,12 @@ class BoundaryCommunicator(object):
         else:
             # User-defined exchange_period. Choose carefully.
             self.exchange_period = exchange_period
+
+        self.injection = injection
+        if injection['p'] is not None:
+            # inject particles at user-defined interval (multiple 
+            # of exchange_period) with moving window v=0
+            self.injection['p'] = injection['p'] * self.exchange_period
 
         # Initialize the moving window to None (See the method
         # set_moving_window in main.py to initialize a proper moving window)
@@ -707,7 +739,7 @@ class BoundaryCommunicator(object):
             req_sr.Wait()
 
 
-    def exchange_particles(self, species, fld, time ):
+    def exchange_particles( self, species, fld, walls, time, iteration ):
         """
         Look for particles that are located outside of the physical boundaries
         and:
@@ -737,6 +769,7 @@ class BoundaryCommunicator(object):
             from a density profile: in the case the time is used in
             order to infer how much the plasma has moved)
         """
+
         # For single-proc periodic simulation (periodic boundaries)
         # simply shift the particle positions by an integer number
         if self.n_guard == 0:
@@ -745,9 +778,9 @@ class BoundaryCommunicator(object):
         # Otherwise, remove particles that are outside of the local physical
         # subdomain and send them to neighboring processors
         else:
-            self.exchange_particles_aperiodic_subdomain( species, fld, time )
+            self.exchange_particles_aperiodic_subdomain( species, fld, walls, time, iteration )
 
-    def exchange_particles_aperiodic_subdomain(self, species, fld, time ):
+    def exchange_particles_aperiodic_subdomain(self, species, fld, walls, time, iteration ):
         """
         Look for particles that are located outside of the physical boundaries
         of the local subdomain and exchange them with the corresponding
@@ -775,7 +808,7 @@ class BoundaryCommunicator(object):
         # Remove out-of-domain particles from particle arrays (either on
         # CPU or GPU) and store them in sending buffers on the CPU
         float_send_left, float_send_right, uint_send_left, uint_send_right = \
-            remove_outside_particles( species, fld, self.n_guard,
+            remove_outside_particles( species, fld, walls, self.n_guard,
                                     self.left_proc, self.right_proc )
 
         # Send/receive the number of particles (need to be stored in arrays)
@@ -807,7 +840,10 @@ class BoundaryCommunicator(object):
             and (self.rank == self.size-1) \
             and species.continuous_injection:
             float_recv_right, uint_recv_right = \
-                species.generate_continuously_injected_particles( time )
+                species.generate_continuously_injected_particles( time,
+                                                                 self.moving_win.v,
+                                                                 iteration,
+                                                                 self.injection )
 
         # Periodic boundary conditions for exchanging particles
         # Particles received at the right (resp. left) end of the simulation
@@ -819,7 +855,7 @@ class BoundaryCommunicator(object):
         if self.left_proc == self.size-1:
             # The index 2 corresponds to z
             float_recv_left[2,:] = float_recv_left[2,:] - Ltot
-
+            
         # Add the exchanged buffers to the particles on the CPU or GPU
         # and resize the auxiliary field-on-particle and sorting arrays
         add_buffers_to_particles( species, float_recv_left, float_recv_right,
@@ -938,6 +974,7 @@ class BoundaryCommunicator(object):
         # can directly be multiplied with the fields at the left boundary of
         # the box - and needs to be inverted (damping_array[::-1]) before being
         # applied to the right boundary of the box.)
+
         damping_array = np.where( i_cell<n_guard+n_inject+nz_damp/2.,
             np.sin((i_cell-(n_guard+n_inject))*np.pi/(2*nz_damp/2.))**2, 1. )
         damping_array = np.where( i_cell<n_guard+n_inject, 0., damping_array )

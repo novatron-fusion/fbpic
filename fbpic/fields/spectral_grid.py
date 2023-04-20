@@ -301,17 +301,28 @@ class SpectralGrid(object) :
         Correct the electric field, so that it satisfies the equation
         div(E) - rho/epsilon_0 = 0
         """
-        # Correct div(E) on the CPU
+        # Correct div(E) on the CPU/GPU
+        if self.use_cuda:
+            # Calculate the intermediate variable F
+            F = - self.d_inv_k2 * (
+                - self.rho_prev/epsilon_0 \
+                + 1.j*self.d_kz*self.Ez + self.d_kr*( self.Ep - self.Em ) )
 
-        # Calculate the intermediate variable F
-        F = - self.inv_k2 * (
-            - self.rho_prev/epsilon_0 \
-            + 1.j*self.kz*self.Ez + self.kr*( self.Ep - self.Em ) )
+            # Correct the current
+            self.Ep += 0.5*self.d_kr*F
+            self.Em += -0.5*self.d_kr*F
+            self.Ez += -1.j*self.d_kz*F
+        else:
+            # Calculate the intermediate variable F
+            F = - self.inv_k2 * (
+                - self.rho_prev/epsilon_0 \
+                + 1.j*self.kz*self.Ez + self.kr*( self.Ep - self.Em ) )
 
-        # Correct the current accordingly
-        self.Ep += 0.5*self.kr*F
-        self.Em += -0.5*self.kr*F
-        self.Ez += -1.j*self.kz*F
+            # Correct the current
+            self.Ep += 0.5*self.kr*F
+            self.Em += -0.5*self.kr*F
+            self.Ez += -1.j*self.kz*F
+
 
     def push_eb_with(self, ps, use_true_rho=False ) :
         """

@@ -73,6 +73,7 @@ class ParticleDiagnostic(OpenPMDDiagnostic) :
         subsampling_fraction : float, optional
             If this is not None, the particle data is subsampled with
             subsampling_fraction probability
+
         """
         # Check input
         if len(species) == 0:
@@ -94,6 +95,24 @@ class ParticleDiagnostic(OpenPMDDiagnostic) :
         self.species_dict = species
         self.select = select
         self.subsampling_fraction = subsampling_fraction
+        if any(quantity in particle_data for quantity in \
+            ["EscapedPosition", "EscapedMomentum", "EscapedWeighting"]):
+            self.save_escaped = True
+            self.escaped_array_quantities_dict = {}
+            self.escaped_constant_quantities_dict = {}
+            for species_name in self.species_names_list:
+                species = self.species_dict[species_name]
+                # Get the list of quantities that are written as arrays
+                self.escaped_array_quantities_dict[species_name] = []
+                for quantity in particle_data:
+                    if quantity == "EscapedPosition":
+                        self.escaped_array_quantities_dict[species_name] += ['x_e','y_e','z_e']
+                    elif quantity == "EscapedMomentum":
+                        self.escaped_array_quantities_dict[species_name] += ['ux_e','uy_e','uz_e']
+                    elif quantity == "EscapedWeighting":
+                        self.escaped_array_quantities_dict[species_name].append('w_e')
+        else:
+            self.save_escaped = False
 
         # For each species, get the particle arrays to be written
         self.array_quantities_dict = {}
@@ -113,8 +132,7 @@ class ParticleDiagnostic(OpenPMDDiagnostic) :
                     self.array_quantities_dict[species_name] += ['Bx','By','Bz']
                 elif quantity == "weighting":
                     self.array_quantities_dict[species_name].append('w')
-                else:
-                    self.array_quantities_dict[species_name].append(quantity)
+                    
             # For tracked particles, the id is automatically added
             if species.tracker is not None:
                 self.array_quantities_dict[species_name] += ["id"]
@@ -173,6 +191,7 @@ class ParticleDiagnostic(OpenPMDDiagnostic) :
         grp["positionOffset/x"].attrs["value"] = 0.
         grp["positionOffset/y"].attrs["value"] = 0.
         grp["positionOffset/z"].attrs["value"] = 0.
+
 
     def setup_openpmd_species_record( self, grp, quantity ) :
         """
@@ -272,6 +291,25 @@ class ParticleDiagnostic(OpenPMDDiagnostic) :
             # Write the datasets for each particle datatype
             self.write_particles( species_grp, species, n_rank,
                 Ntot, select_array, self.array_quantities_dict[species_name] )
+            if self.save_escaped:
+                # Select the particles that will be written
+                select_array = self.apply_escaped_selection( species )
+                # Get their total number
+                n = select_array.sum()
+                if self.comm is not None:
+                    # Multi-proc output
+                    if self.comm.size > 1:
+                        n_rank = self.comm.mpi_comm.allgather(n)
+                    else:
+                        n_rank = [n]
+                    Ntot = sum(n_rank)
+                else:
+                    # Single-proc output
+                    n_rank = None
+                    Ntot = n
+                # Write the datasets for each particle datatype
+                self.write_escaped_particles( species_grp, species, n_rank,
+                    Ntot, select_array, self.escaped_array_quantities_dict[species_name] )
 
         # Close the file
         if self.rank == 0:
@@ -280,11 +318,11 @@ class ParticleDiagnostic(OpenPMDDiagnostic) :
         # Send data to the GPU if needed
         for species_name in self.species_names_list:
             species = self.species_dict[species_name]
-            if species.use_cuda :
+            if species.use_cuda:
                 species.send_particles_to_gpu()
 
-    def write_particles( self, species_grp, species, n_rank,
-                         Ntot, select_array, particle_data ) :
+    def write_particles( self, species_grp, species, n_rank, 
+                        Ntot, select_array, particle_data ) :
         """
         Write all the particle data sets for one given species
 
@@ -311,12 +349,11 @@ class ParticleDiagnostic(OpenPMDDiagnostic) :
         """
         # Loop through the quantities and write them
         for quantity in particle_data :
-
             if quantity in ["x", "y", "z"]:
                 quantity_path = "position/%s" %(quantity)
                 self.write_dataset( species_grp, species, quantity_path,
                         quantity, n_rank, Ntot, select_array )
-
+            
             elif quantity in ["ux", "uy", "uz"]:
                 quantity_path = "momentum/%s" %(quantity[-1])
                 self.write_dataset( species_grp, species, quantity_path,
@@ -342,10 +379,10 @@ class ParticleDiagnostic(OpenPMDDiagnostic) :
                 if self.rank == 0:
                     self.setup_openpmd_species_record(
                         species_grp[quantity_path], quantity_path )
-
             else :
                 raise ValueError("Invalid string in %s of species"
                     				 %(quantity))
+            
 
         # Setup the hdf5 groups for "position", "momentum", "E", "B"
         if self.rank == 0:
@@ -362,6 +399,64 @@ class ParticleDiagnostic(OpenPMDDiagnostic) :
                 self.setup_openpmd_species_record(
                     species_grp["B"], "B" )
 
+    def write_escaped_particles( self, species_grp, species, n_rank, 
+                        Ntot, select_array, particle_data ) :
+        """
+        Write all the particle data sets for one given species
+
+        species_grp : an h5py.Group
+            The group where to write the species considered
+
+        species : an fbpic.Particles object
+        	The species object to get the particle data from
+
+        n_rank : list of ints
+            A list containing the number of particles to send on each proc
+
+        Ntot : int
+        	Contains the global number of particles
+
+        select_array : 1darray of bool
+            An array of the same shape as that particle array
+            containing True for the particles that satify all
+            the rules of self.select
+
+        particle_data: list of string
+            The particle quantities that should be written
+            (e.g. 'x_e', 'uy_e)
+        """
+        # Loop through the quantities and write them
+        for quantity in particle_data :
+            if quantity in ["x_e", "y_e", "z_e"]:
+                quantity_path = "EscapedPosition/%s" %(quantity[0])
+                self.write_dataset( species_grp, species, quantity_path,
+                        quantity, n_rank, Ntot, select_array )
+
+            elif quantity in ["ux_e", "uy_e", "uz_e"]:
+                quantity_path = "EscapedMomentum/%s" %(quantity[1])
+                self.write_dataset( species_grp, species, quantity_path,
+                        quantity, n_rank, Ntot, select_array )
+            elif quantity in ["w_e"]:
+                quantity_path = "EscapedWeighting"
+                self.write_dataset( species_grp, species, quantity_path,
+                        quantity, n_rank, Ntot, select_array )
+                if self.rank == 0:
+                    self.setup_openpmd_species_record(
+                        species_grp[quantity_path], quantity_path )
+            else :
+                raise ValueError("Invalid string in %s of species"
+                    				 %(quantity))
+            
+
+        # Setup the hdf5 groups for "position", "momentum"
+        if self.rank == 0:
+            if "x_e" in particle_data:
+                self.setup_openpmd_species_record(
+                    species_grp["EscapedPosition"], "EscapedPosition" )
+            if "ux_e" in particle_data:
+                self.setup_openpmd_species_record(
+                    species_grp["EscapedMomentum"], "EscapedMomentum" )
+
 
     def apply_selection( self, species ) :
         """
@@ -376,7 +471,7 @@ class ParticleDiagnostic(OpenPMDDiagnostic) :
         Returns
         -------
         A 1d array of the same shape as that particle array
-        containing True for the particles that satify all
+        containing True for the particles that satisfy all
         the rules of self.select
         """
         # Initialize an array filled with True
@@ -395,6 +490,49 @@ class ParticleDiagnostic(OpenPMDDiagnostic) :
                     quantity_array = 1.0/getattr( species, "inv_gamma" )
                 else:
                     quantity_array = getattr( species, quantity )
+                # Lower bound
+                if self.select[quantity][0] is not None :
+                    select_array = np.logical_and(
+                        quantity_array > self.select[quantity][0],
+                        select_array )
+                # Upper bound
+                if self.select[quantity][1] is not None :
+                    select_array = np.logical_and(
+                        quantity_array < self.select[quantity][1],
+                        select_array )
+
+        return( select_array )
+
+    def apply_escaped_selection( self, species ) :
+        """
+        Apply the rules of self.select to determine which
+        particles should be written, Apply random subsampling using
+        the property subsampling_fraction.
+
+        Parameters
+        ----------
+        species : a Species object
+
+        Returns
+        -------
+        A 1d array of the same shape as that particle array
+        containing True for the particles that satisfy all
+        the rules of self.select
+        """
+        # Initialize an array filled with True
+        Ntot_e = species.x_e.shape[0]
+        select_array = np.ones( Ntot_e, dtype='bool' )
+        # subsampling selector
+        if self.subsampling_fraction is not None :
+            subsampling_array = np.random.rand(Ntot_e) < \
+                self.subsampling_fraction
+            select_array = np.logical_and(subsampling_array,select_array)
+
+        # Apply the rules successively
+        if self.select is not None :
+            # Go through the quantities on which a rule applies
+            for quantity in self.select.keys() :
+                quantity_array = getattr( species, quantity )
                 # Lower bound
                 if self.select[quantity][0] is not None :
                     select_array = np.logical_and(
@@ -474,7 +612,7 @@ class ParticleDiagnostic(OpenPMDDiagnostic) :
 
         select_array : 1darray of bool
             An array of the same shape as that particle array
-            containing True for the particles that satify all
+            containing True for the particles that satisfy all
             the rules of self.select
 
         n_rank: list of ints
@@ -490,6 +628,8 @@ class ParticleDiagnostic(OpenPMDDiagnostic) :
             quantity_one_proc = constants.e * species.ionizer.ionization_level
         elif quantity == "w":
             quantity_one_proc = species.w
+        elif quantity == "w_e":
+            quantity_one_proc = species.w_e
         elif quantity == "gamma":
             quantity_one_proc = 1.0/getattr( species, "inv_gamma" )
         else:
@@ -500,7 +640,7 @@ class ParticleDiagnostic(OpenPMDDiagnostic) :
 
         # If this is the momentum, multiply by the proper factor
         # (only for species that have a mass)
-        if quantity in ['ux', 'uy', 'uz']:
+        if quantity in ['ux', 'uy', 'uz', 'ux_e', 'uy_e', 'uz_e']:
             if species.m>0:
                 scale_factor = species.m * constants.c
                 quantity_one_proc *= scale_factor
@@ -512,3 +652,4 @@ class ParticleDiagnostic(OpenPMDDiagnostic) :
 
         # Return the results
         return( quantity_all_proc )
+
