@@ -12,7 +12,7 @@ from .tracking import ParticleTracker
 from .elementary_process.ionization import Ionizer
 from .elementary_process.compton import ComptonScatterer
 from .injection import BallisticBeforePlane, ContinuousInjector, \
-                        generate_evenly_spaced
+                        generate_evenly_spaced, verify_generated_particles
 
 # Load the numba methods
 from .push.numba_methods import push_p_numba, push_p_ioniz_numba, \
@@ -75,7 +75,8 @@ class Particles(object) :
                     dens_func=None, continuous_injection=True,
                     grid_shape=None, particle_shape='linear',
                     use_cuda=False, dz_particles=None,
-                    particle_boundaries={'zmin':'open', 'zmax':'open'}):
+                    particle_boundaries={'zmin':'open', 'zmax':'open'},
+                    initial_particle_generator=None):
         """
         Initialize a uniform set of particles
 
@@ -158,6 +159,16 @@ class Particles(object) :
                 
             If the EM-boundaries are periodic then the particles will be
             perodic as well.
+
+        initial_particle_generator: callable, optional
+            A function of the form :
+            ` def initial_particle_generator( Npz, zmin, zmax, Npr, rmin, rmax,
+                Nptheta, n, dens_func, ux_m, uy_m, uz_m, ux_th, uy_th, uz_th )`
+            which returns
+            ` Ntot, x, y, z, ux, uy, uz, inv_gamma `
+            for the particles to be initially present. If not passed, the function
+            `continuous_injection.generate_evenly_spaced` is used. See that function for
+            an example.
         """
         # Define whether or not to use the GPU
         self.use_cuda = use_cuda
@@ -172,10 +183,14 @@ class Particles(object) :
         self.zmax = zmax
         self.particle_boundaries = particle_boundaries
 
+        initial_particle_generator = initial_particle_generator or generate_evenly_spaced
+
         # Generate evenly-spaced particles
-        Ntot, x, y, z, ux, uy, uz, inv_gamma, w = generate_evenly_spaced(
+        Ntot, x, y, z, ux, uy, uz, inv_gamma, w = initial_particle_generator(
             Npz, zmin, zmax, Npr, rmin, rmax, Nptheta, n, dens_func,
             ux_m, uy_m, uz_m, ux_th, uy_th, uz_th )
+
+        verify_generated_particles(Ntot, x, y, z, ux, uy, uz, inv_gamma, w)
 
         # Register the properties of the particles
         # (Necessary for the pusher, and when adding more particles later, )
