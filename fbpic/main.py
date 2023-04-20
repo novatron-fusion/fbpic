@@ -425,7 +425,7 @@ class Simulation(object):
             fld.interp2spect('B_pml')
 
         for walls in self.walls:
-                walls.save_fields( fld.interp, self.comm, self.iteration )
+            walls.create_wall( fld.interp, self.comm, self.iteration )
 
         # Beginning of the N iterations
         # -----------------------------
@@ -580,9 +580,6 @@ class Simulation(object):
                     self.comm.exchange_fields(fld.interp, 'J', 'add')
                     fld.partial_interp2spect('J')
                 fld.exchanged_source['J'] = True
-
-            for walls in self.walls:
-                walls.save_fields( fld.interp, self.comm, self.iteration )
                 
             # Push the fields E and B on the spectral grid to t = (n+1) dt
             fld.push( use_true_rho, check_exchanges=(self.comm.size > 1) )
