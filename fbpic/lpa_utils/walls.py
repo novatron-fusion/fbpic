@@ -196,8 +196,8 @@ class PEC(Wall):
         z_start=None,
         h=None,
         L=None,
-        gamma_boost=None,
-        m="all",
+        dtv_filter=False,
+        apply_pec=True,
     ):
         """
         Initialize a perfect electric conductor.
@@ -229,17 +229,10 @@ class PEC(Wall):
         self.z_start = z_start
         self.h = h
         self.L = L
-        # static, active, mirror
-        self.method = "static"
-        self.gamma_boost = gamma_boost
-        if m == "all":
-            self.modes = None
-        elif isinstance(m, int):
-            self.modes = [m]
-        elif isinstance(m, list):
-            self.modes = m
-        else:
-            raise TypeError("m should be an int or a list of ints.")
+        self.dtv_filter = dtv_filter
+        self.apply_pec = apply_pec
+
+
 
     def create_wall(self, interp, comm, iteration):
         """
@@ -274,25 +267,30 @@ class PEC(Wall):
         """
         Reflect fields at perfect electric conductor
         """
+        if self.apply_pec:
+            for m in range(len(interp)):
+                r = cupy.linspace(interp[m].rmin, interp[m].rmax, interp[m].Nr)
+                z = cupy.linspace(interp[m].zmin, interp[m].zmax, interp[m].Nz)
 
-        for m in range(len(interp)):
-            r = cupy.linspace(interp[m].rmin, interp[m].rmax, interp[0].Nr)
-            dim_grid_2d, dim_block_2d = cuda_tpb_bpg_2d(interp[m].Nz, interp[m].Nr)
+                dim_grid_2d, dim_block_2d = cuda_tpb_bpg_2d(interp[m].Nz, interp[m].Nr)
 
-            self.pec_static_penalty_term[dim_grid_2d, dim_block_2d](
-                interp[m].Ez,
-                interp[m].Er,
-                interp[m].Et,
-                r,
-                self.segments,
-                interp[m].rmax,
-            )
-            """
-            if iteration % 1000 == 0:
-                self.complexDTVFilter(Ez, 9, 1, z, r, self.segments, self.normal)
-                self.complexDTVFilter(Er, 9, 1, z, r, self.segments, self.normal)
-                self.complexDTVFilter(Et, 9, 1, z, r, self.segments, self.normal)
-            """
+                self.pec_static_penalty_term[dim_grid_2d, dim_block_2d](
+                    interp[m].Ez,
+                    interp[m].Er,
+                    interp[m].Et,
+                    interp[m].Bz,
+                    interp[m].Br,
+                    interp[m].Bt,
+                    r,
+                    self.segments,
+                    interp[m].rmax,
+                )
+
+                if self.dtv_filter and iteration % 100 == 0:
+                    self.complexDTVFilter(interp[m].Ez, 9, 1, z, r, self.segments, self.normal)
+                    self.complexDTVFilter(interp[m].Er, 9, 1, z, r, self.segments, self.normal)
+                    self.complexDTVFilter(interp[m].Et, 9, 1, z, r, self.segments, self.normal)
+                
 
     @compile_cupy
     def calculate_local_coord_syst(
@@ -354,15 +352,18 @@ class PEC(Wall):
                     break
 
     @compile_cupy
-    def pec_static_penalty_term(Ez, Er, Et, r, segments, rmax):
+    def pec_static_penalty_term(Ez, Er, Et, Bz, Br, Bt, r, segments, rmax):
         i, j = cuda.grid(2)
         if i < Ez.shape[0] and j < Ez.shape[1]:
             if r[j] < rmax:
                 # segments: 2 upper, segments: 3 outside polygon
                 if segments[i, j] == 2 or segments[i, j] == 3:
-                    Ez[i, j] = 0.0
-                    Er[i, j] = 0.0
-                    Et[i, j] = 0.0
+                    Ez[i, j] = 0.
+                    Er[i, j] = 0.
+                    Et[i, j] = 0.
+                    Bz[i, j] = 0.
+                    Br[i, j] = 0.
+                    Bt[i, j] = 0.
 
     @compile_cupy
     def DTVStep(u0, U, v, a, dt, Lambda, z, r, segments, normal):
