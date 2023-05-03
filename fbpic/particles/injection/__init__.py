@@ -4,6 +4,6 @@ It imports objects that handle continuous particle injection during
 the simulation.
 """
 from .ballistic_before_plane import BallisticBeforePlane
-from .continuous_injection import ContinuousInjector, generate_evenly_spaced
+from .continuous_injection import ContinuousInjector, generate_evenly_spaced, verify_generated_particles
 __all__ = ['BallisticBeforePlane', 'ContinuousInjector',
-            'generate_evenly_spaced']
+            'generate_evenly_spaced', 'verify_generated_particles']
