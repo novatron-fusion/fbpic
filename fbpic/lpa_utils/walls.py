@@ -275,21 +275,21 @@ class PEC(Wall):
                 dim_grid_2d, dim_block_2d = cuda_tpb_bpg_2d(interp[m].Nz, interp[m].Nr)
 
                 self.pec_static_penalty_term[dim_grid_2d, dim_block_2d](
-                    interp[m].Ez,
                     interp[m].Er,
                     interp[m].Et,
-                    interp[m].Bz,
+                    interp[m].Ez,
                     interp[m].Br,
                     interp[m].Bt,
+                    interp[m].Bz,
                     r,
                     self.segments,
                     interp[m].rmax,
                 )
 
                 if self.dtv_filter and iteration % 100 == 0:
-                    self.complexDTVFilter(interp[m].Ez, 9, 1, z, r, self.segments, self.normal)
                     self.complexDTVFilter(interp[m].Er, 9, 1, z, r, self.segments, self.normal)
                     self.complexDTVFilter(interp[m].Et, 9, 1, z, r, self.segments, self.normal)
+                    self.complexDTVFilter(interp[m].Ez, 9, 1, z, r, self.segments, self.normal)
                 
 
     @compile_cupy
@@ -352,18 +352,18 @@ class PEC(Wall):
                     break
 
     @compile_cupy
-    def pec_static_penalty_term(Ez, Er, Et, Bz, Br, Bt, r, segments, rmax):
+    def pec_static_penalty_term(Er, Et, Ez, Br, Bt, Bz, r, segments, rmax):
         i, j = cuda.grid(2)
         if i < Ez.shape[0] and j < Ez.shape[1]:
             if r[j] < rmax:
                 # segments: 2 upper, segments: 3 outside polygon
                 if segments[i, j] == 2 or segments[i, j] == 3:
-                    Ez[i, j] = 0.
                     Er[i, j] = 0.
                     Et[i, j] = 0.
-                    Bz[i, j] = 0.
+                    Ez[i, j] = 0.
                     Br[i, j] = 0.
                     Bt[i, j] = 0.
+                    Bz[i, j] = 0.
 
     @compile_cupy
     def DTVStep(u0, U, v, a, dt, Lambda, z, r, segments, normal):

@@ -80,6 +80,7 @@ def add_initial_B_field_m_0( sim, Br, Bt, Bz):
         # Add it to the fields of sim.fld
         local_field = getattr( sim.fld.interp[0], field )
         local_field[ iz_in_array:iz_in_array+Nz_local, : ] += local_array
+    
 
     if sim.comm.rank == 0:
         print("Done.\n")
