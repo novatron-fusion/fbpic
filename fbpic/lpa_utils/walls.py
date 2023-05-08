@@ -3,8 +3,8 @@
 # License: 3-Clause-BSD-LBNL
 """
 This file is part of the Fourier-Bessel Particle-In-Cell code (FB-PIC)
-It defines an abstract Wall class and the derived 
-classes, such as mirror, perfect electric conductor (PEC), 
+It defines an abstract Wall class and the derived
+classes, such as mirror, perfect electric conductor (PEC),
 and perfect magnetic conductor (PMC) class.
 """
 from abc import ABC
@@ -101,8 +101,8 @@ class Mirror(Wall):
         Initialize a mirror.
 
         The mirror reflects the fields in the z direction, by setting the
-        specified field modes to 0 in a thin slice orthogonal to z, at each timestep.
-        By default, all modes are zeroed.
+        specified field modes to 0 in a thin slice orthogonal to z, at
+        each timestep. By default, all modes are zeroed.
 
         Parameters
         ----------
@@ -155,9 +155,14 @@ class Mirror(Wall):
         else:
             beta_boost = (1.0 - 1.0 / self.gamma_boost**2) ** 0.5
             z_start_boost = (
-                1.0 / self.gamma_boost * self.z_start - beta_boost * c * t_boost
-            )
-            z_end_boost = 1.0 / self.gamma_boost * self.z_end - beta_boost * c * t_boost
+                1.0 /
+                self.gamma_boost *
+                self.z_start -
+                beta_boost *
+                c *
+                t_boost)
+            z_end_boost = 1.0 / self.gamma_boost * self.z_end \
+                - beta_boost * c * t_boost
 
         # Calculate indices in z between which the field should be set to 0
         zmin, zmax = comm.get_zmin_zmax(
@@ -178,7 +183,8 @@ class Mirror(Wall):
 
             fieldlist = ["Er", "Et", "Ez", "Br", "Bt", "Bz"]
             if grid.use_pml:
-                fieldlist = fieldlist + ["Er_pml", "Et_pml", "Br_pml", "Bt_pml"]
+                fieldlist = fieldlist + \
+                    ["Er_pml", "Et_pml", "Br_pml", "Bt_pml"]
             for field in fieldlist:
                 arr = getattr(grid, field)
                 arr[imin:imax, :] = 0.0  # Uses numpy/cupy syntax
@@ -232,8 +238,6 @@ class PEC(Wall):
         self.dtv_filter = dtv_filter
         self.apply_pec = apply_pec
 
-
-
     def create_wall(self, interp, comm, iteration):
         """
         Construct segments and penalty term for PEC boundary condition
@@ -253,7 +257,8 @@ class PEC(Wall):
         r = cupy.linspace(0.0, interp[0].rmax, interp[0].Nr)
 
         dim_grid_2d, dim_block_2d = cuda_tpb_bpg_2d(interp[0].Nz, interp[0].Nr)
-        self.segments = cupy.zeros((interp[0].Nz, interp[0].Nr), dtype=np.int32)
+        self.segments = cupy.zeros(
+            (interp[0].Nz, interp[0].Nr), dtype=np.int32)
         self.calculate_segments[dim_grid_2d, dim_block_2d](
             self.segments,
             z,
@@ -263,7 +268,13 @@ class PEC(Wall):
             self.lower_segment,
         )
 
-    def set_boundary_conditions(self, interp, comm, iteration, *args, **kwargs):
+    def set_boundary_conditions(
+            self,
+            interp,
+            comm,
+            iteration,
+            *args,
+            **kwargs):
         """
         Reflect fields at perfect electric conductor
         """
@@ -272,7 +283,8 @@ class PEC(Wall):
                 r = cupy.linspace(interp[m].rmin, interp[m].rmax, interp[m].Nr)
                 z = cupy.linspace(interp[m].zmin, interp[m].zmax, interp[m].Nz)
 
-                dim_grid_2d, dim_block_2d = cuda_tpb_bpg_2d(interp[m].Nz, interp[m].Nr)
+                dim_grid_2d, dim_block_2d = cuda_tpb_bpg_2d(
+                    interp[m].Nz, interp[m].Nr)
 
                 self.pec_static_penalty_term[dim_grid_2d, dim_block_2d](
                     interp[m].Er,
@@ -287,10 +299,12 @@ class PEC(Wall):
                 )
 
                 if self.dtv_filter and iteration % 100 == 0:
-                    self.complexDTVFilter(interp[m].Er, 9, 1, z, r, self.segments, self.normal)
-                    self.complexDTVFilter(interp[m].Et, 9, 1, z, r, self.segments, self.normal)
-                    self.complexDTVFilter(interp[m].Ez, 9, 1, z, r, self.segments, self.normal)
-                
+                    self.complexDTVFilter(
+                        interp[m].Er, 9, 1, z, r, self.segments, self.normal)
+                    self.complexDTVFilter(
+                        interp[m].Et, 9, 1, z, r, self.segments, self.normal)
+                    self.complexDTVFilter(
+                        interp[m].Ez, 9, 1, z, r, self.segments, self.normal)
 
     @compile_cupy
     def calculate_local_coord_syst(
@@ -301,8 +315,10 @@ class PEC(Wall):
             if r[j] < rmax and r[j] > 0.0:
                 n = len(wall_arr)
                 for k in range(n - 1):
-                    in_lower_segment = ray_casting(z[i], r[j], lower_segment[k])
-                    in_upper_segment = ray_casting(z[i], r[j], upper_segment[k])
+                    in_lower_segment = ray_casting(
+                        z[i], r[j], lower_segment[k])
+                    in_upper_segment = ray_casting(
+                        z[i], r[j], upper_segment[k])
                     if in_lower_segment or in_upper_segment:
                         if (
                             lower_segment[k][0, 1] == rmax
@@ -333,7 +349,13 @@ class PEC(Wall):
                         break
 
     @compile_cupy
-    def calculate_segments(segments, z, r, wall_arr, upper_segment, lower_segment):
+    def calculate_segments(
+            segments,
+            z,
+            r,
+            wall_arr,
+            upper_segment,
+            lower_segment):
         i, j = cuda.grid(2)
         if i < segments.shape[0] and j < segments.shape[1]:
             n = len(wall_arr)
@@ -426,19 +448,6 @@ class PEC(Wall):
                     + (U[i + 1, j + 1] - U[i, j + 1]) ** 2
                     + a
                 ) ** 0.5
-                """
-                #i=0 j=0
-                s[0,0] = ( (U[0,1]-U[0,0])**2 + (U[1,0]-U[0,0])**2 + a )**0.5
-
-                #i=N-1; j=M-1
-                s[N-1,M-1] = ( (U[N-1,M-2]-U[N-1,M-1])**2 + (U[N-2,M-1]-U[N-1,M-1])**2 )**0.5
-
-                #i=N-1; j=0
-                s[N-1,0] = ( (U[N-1,1]-U[N-1,0])**2 + (U[N-2,0]-U[N-1,0])**2 )**0.5
-
-                #i=0; j=M-1
-                s[0,M-1] = ( (U[0,M-2]-U[0,M-1])**2 + (U[1,M-1]-U[0,M-1])**2 + a )**0.5
-                """
 
                 v[i, j] = u1 + dt * (
                     (U[i + 1, j] - u1) * (1.0 + s / sip)
@@ -557,29 +566,37 @@ class PMC(Wall):
             Bt = getattr(grid, "Bt")
             Bz = getattr(grid, "Bz")
 
-            Br[imin : im + 3, :] -= self.eta * (
-                self.Br_o[imin : im + 3, :]
-                - self.Br_o[imax, :] * (P01(Z[imin : im + 3, :], self.h, self.L))
+            Br[imin: im + 3, :] -= self.eta * (
+                self.Br_o[imin: im + 3, :]
+                - self.Br_o[imax, :]
+                * (
+                    P01(Z[imin: im + 3, :], self.h, self.L)
+                )
             )
 
-            Bt[imin : im + 3, :] -= self.eta * (
-                self.Bt_o[imin : im + 3, :]
-                - self.Bt_o[imax, :] * (P01(Z[imin : im + 3, :], self.h, self.L))
+            Bt[imin: im + 3, :] -= self.eta * (
+                self.Bt_o[imin: im + 3, :]
+                - self.Bt_o[imax, :]
+                * (
+                    P01(Z[imin: im + 3, :], self.h, self.L)
+                )
             )
-            Bz[imin : im + 3, :] -= self.eta * (
-                self.Bz_o[imin : im + 3, :]
-                - self.Bz_o[im, :] * (P00(Z[imin : im + 3, :], self.h, self.L))
-                - self.Bz_o[imax, :] * (P01(Z[imin : im + 3, :], self.h, self.L))
+            Bz[imin: im + 3, :] -= self.eta * (
+                self.Bz_o[imin: im + 3, :]
+                - self.Bz_o[im, :]
+                * (
+                    P00(Z[imin: im + 3, :], self.h, self.L)
+                )
+                - self.Bz_o[imax, :]
+                * (
+                    P01(Z[imin: im + 3, :], self.h, self.L)
+                )
             )
-            """
-            Br[ im-n_cells:im-1, :] = cupy.flip(-Br[im+1:im+n_cells, :], axis=0)  # Uses numpy/cupy syntax
-            Bt[ im-n_cells:im-1, :] = cupy.flip(-Bt[im+1:im+n_cells, :], axis=0)  # Uses numpy/cupy syntax
-            Bz[ im-n_cells:im-1, :] = cupy.flip(Bz[im+1:im+n_cells, :], axis=0)  # Uses numpy/cupy syntax
-            """
-            Br[imin : im + 3, -1] = 0.0
-            Bt[imin : im + 3, -1] = 0.0
-            Bz[imin : im + 3, -1] = 0.0
-            Br[imin : im + 3, 0] = 0.0
-            Bt[imin : im + 3, 0] = 0.0
+
+            Br[imin: im + 3, -1] = 0.0
+            Bt[imin: im + 3, -1] = 0.0
+            Bz[imin: im + 3, -1] = 0.0
+            Br[imin: im + 3, 0] = 0.0
+            Bt[imin: im + 3, 0] = 0.0
             Br[im, :] = 0.0
             Bt[im, :] = 0.0
