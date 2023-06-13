@@ -177,7 +177,20 @@ class Mirror(Wall):
 
 class PEC(Wall):
 
-    def __init__( self, wall_arr, upper_segment, lower_segment, normal, tangent, side, z_start=None, h=None, L=None, gamma_boost=None, m='all'):
+    def __init__( self, 
+                 wall_arr,
+                 upper_segment, 
+                 lower_segment,
+                 normal, 
+                 tangent, 
+                 side,
+                 dtv_filter=False,
+                 apply_pec=True,
+                 z_start=None, 
+                 h=None, 
+                 L=None, 
+                 gamma_boost=None, 
+                 m='all'):
         """
         Initialize a perfect electric conductor.
 
@@ -208,6 +221,8 @@ class PEC(Wall):
         self.z_start = z_start
         self.h = h
         self.L = L
+        self.dtv_filter = dtv_filter
+        self.apply_pec = apply_pec
         # static, active, mirror
         self.method = 'static'
         self.gamma_boost = gamma_boost
@@ -295,73 +310,21 @@ class PEC(Wall):
 
             R, Z = cupy.meshgrid(r,z)
             
-            for i, grid in enumerate(interp):
+            for m, grid in enumerate(interp):
                 if self.modes is not None:
-                    if i not in self.modes:
+                    if m not in self.modes:
                         continue
-
-                Er = getattr( grid, 'Er')
-                Et = getattr( grid, 'Et')
-                Ez = getattr( grid, 'Ez')
-
-                dim_grid_2d, dim_block_2d = cuda_tpb_bpg_2d(interp[0].Nz, interp[0].Nr)
-                if self.method == 'active':
-                    self.pec_lower_penalty_term[dim_grid_2d, dim_block_2d]( Ez, Er, Et,
-                                                                self.Ez_old, self.Er_old, self.Et_old,
-                                                                z, r, self.wall_arr,
-                                                                self.s, self.h, self.L,
-                                                                self.lower_segment,
-                                                                self.normal,
-                                                                interp[0].dz, interp[0].dr,
-                                                                interp[0].Nz, interp[0].Nr,
-                                                                interp[0].rmax,
-                                                                zmin)
-
-                    self.pec_upper_penalty_term[dim_grid_2d, dim_block_2d]( Ez, Er, Et,
-                                                                self.Ez_old, self.Er_old, self.Et_old,
-                                                                z, r, self.wall_arr,
-                                                                self.s, self.h, self.L,
-                                                                self.upper_segment,
-                                                                self.lower_segment,
-                                                                self.normal,
-                                                                interp[0].dz, interp[0].dr,
-                                                                interp[0].Nz, interp[0].Nr,
-                                                                interp[0].rmax,
-                                                                zmin)
-                elif self.method == 'mirror':
-                    
-                    self.pec_lower_penalty_term[dim_grid_2d, dim_block_2d]( Ez, Er, Et,
-                                                                self.Ez_old, self.Er_old, self.Et_old,
-                                                                z, r, self.wall_arr,
-                                                                self.s, self.h, self.L,
-                                                                self.lower_segment,
-                                                                self.normal,
-                                                                interp[0].dz, interp[0].dr,
-                                                                interp[0].Nz, interp[0].Nr,
-                                                                interp[0].rmax,
-                                                                zmin)
-                    
-                    self.pec_mirror_image[dim_grid_2d, dim_block_2d]( Ez, Er, Et,
-                                            self.Ez_old, self.Er_old, self.Et_old,
-                                            z, r, self.wall_arr,
-                                            self.upper_segment,
-                                            self.lower_segment,
-                                            self.normal,
-                                            self.tangent,
-                                            self.s, self.h, self.L,
-                                            interp[0].dz, interp[0].dr,
-                                            interp[0].Nz, interp[0].Nr,
-                                            interp[0].rmax,
-                                            zmin)
-                else:
-                    self.pec_static_penalty_term[dim_grid_2d, dim_block_2d]( Ez, Er, Et,
-                                                                        self.Ez_old, self.Er_old, self.Et_old,
-                                                                        r, self.segments, interp[0].rmax)
-
-                #if iteration % 500 == 0:
-                #    self.complexDTVFilter(Ez, 9, 1, z, r, self.segments, self.normal)
-                #    self.complexDTVFilter(Er, 9, 1, z, r, self.segments, self.normal)
-                #    self.complexDTVFilter(Et, 9, 1, z, r, self.segments, self.normal)
+                
+                if self.apply_pec:
+                    dim_grid_2d, dim_block_2d = cuda_tpb_bpg_2d(interp[0].Nz, interp[0].Nr)
+                    self.pec_static_penalty_term[dim_grid_2d, dim_block_2d]( interp[m].Ez, interp[m].Er, interp[m].Et,
+                                                                            self.Ez_old, self.Er_old, self.Et_old,
+                                                                            r, self.segments, interp[0].rmax)
+                
+                if self.dtv_filter and iteration % 500 == 0:
+                    self.complexDTVFilter(interp[m].Ez, 9, 1, z, r, self.segments, self.normal)
+                    self.complexDTVFilter(interp[m].Er, 9, 1, z, r, self.segments, self.normal)
+                    self.complexDTVFilter(interp[m].Et, 9, 1, z, r, self.segments, self.normal)
                 
                 #self.laplacian_smoothing[dim_grid_2d, dim_block_2d](Ez, self.segments)
                 #self.laplacian_smoothing[dim_grid_2d, dim_block_2d](Er, self.segments)
@@ -646,9 +609,9 @@ class PEC(Wall):
             if r[j] < rmax:
                 # segments: 2 upper, segments: 3 outside polygon
                 if segments[i,j] == 2 or segments[i,j] == 3:
-                    Ez[i,j] = Ez[i,j] - 0.9*Ez_o[i,j]
-                    Er[i,j] = Er[i,j] - 0.9*Er_o[i,j]
-                    Et[i,j] = Et[i,j] - 0.9*Et_o[i,j]
+                    Ez[i,j] = Ez[i,j] - 0.0*Ez_o[i,j]
+                    Er[i,j] = Er[i,j] - 0.0*Er_o[i,j]
+                    Et[i,j] = Et[i,j] - 0.0*Et_o[i,j]
 
     @compile_cupy
     def laplacian_smoothing(grid, segments):
