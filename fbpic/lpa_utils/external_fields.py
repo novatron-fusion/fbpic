@@ -16,8 +16,8 @@ if cuda_installed:
 class ExternalField( object ):
 
     def __init__(self, field_func, fieldtype, amplitude,
-                 length_scale, species=None, gamma_boost=None,
-                 Nz=None, Nr=None, dz=None, dr=None ):
+                 length_scale, species=None, Bmag=None, gamma_boost=None,
+                 Nz=None, Nr=None, dz=None, dr=None):
         """
         Initialize an ExternalField object, so that the function
         `field_func` is called at each time step on the field `fieldtype`
@@ -107,6 +107,7 @@ class ExternalField( object ):
         # Register the arguments
         self.length_scale = length_scale
         self.species = species
+        self.Bmag = Bmag
 
         self.Nz = Nz
         self.Nr = Nr
